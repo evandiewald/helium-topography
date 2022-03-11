@@ -1,12 +1,18 @@
 FROM python:3.8-slim-buster
 
 WORKDIR /usr/src/app
+
+RUN mkdir -p static/trained_models/svm
+RUN mkdir -p static/trained_models/gaussian_process
+RUN mkdir -p static/trained_models/isolation_forest
+RUN mkdir -p static/gis-data/SRTM_GL3
+
 COPY . .
 
 RUN apt-get upgrade
 RUN apt-get -y update
 
-RUN apt-get -y install unzip
+RUN apt-get -y install unzip curl wget
 
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 RUN unzip awscliv2.zip
