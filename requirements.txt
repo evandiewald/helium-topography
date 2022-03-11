@@ -27,7 +27,6 @@ entrypoints==0.4
 executing==0.8.2
 fonttools==4.29.1
 future==0.18.2
-GDAL @ file:///F:/Documents/helium-topography/static/dependencies/GDAL-3.4.1-cp39-cp39-win_amd64.whl
 gitdb==4.0.9
 GitPython==3.1.26
 h3==3.7.3
@@ -85,7 +84,6 @@ pytz-deprecation-shim==0.1.0.post0
 pywin32==303
 pywinpty==2.0.2
 pyzmq==22.3.0
-rasterio @ file:///F:/Documents/helium-topography/static/dependencies/rasterio-1.2.10-cp39-cp39-win_amd64.whl
 requests==2.27.1
 scikit-learn==1.0.2
 scipy==1.7.3
