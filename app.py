@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from pyArango.connection import Connection, Database
 import os
 import rasterio
-from arango_queries import get_hotspot_dict, get_witnesses_for_hotspot
+from arango_queries import get_hotspot_dict, get_witnesses_for_hotspot, get_witnesses_of_hotspot
 from gis_utils import get_local_elevation_map
 from feature_extraction import process_witness_paths, get_bearing
 import numpy as np
@@ -55,7 +55,9 @@ db: Database = c['helium-graphs']
 # EVALUATION
 def generate_features(db: Database, hotspot_address: str):
     hotspot_dict = get_hotspot_dict(db, hotspot_address)
-    witness_paths = get_witnesses_for_hotspot(db, hotspot_address, limit=1000)
+    # witness_paths = get_witnesses_for_hotspot(db, hotspot_address, limit=1000)
+    witness_paths = get_witnesses_of_hotspot(db, hotspot_address, limit=1000)
+
 
     with rasterio.open(os.getenv("VRT_PATH")) as dataset:
         elevation_map, window = get_local_elevation_map(dataset, hotspot_dict["latitude"], hotspot_dict["longitude"], range_km=250)
@@ -229,6 +231,6 @@ if run_button:
             st.subheader("Distance vs. RSSI")
             st.plotly_chart(plot_distance_vs_rssi(outliers_df))
 
-        except ValueError:
-            st.error("Error processing simulation. This likely means that the hotspot has no witnesses.")
+        except:
+            st.error("Error processing simulation. This likely means that we have not loaded any witness data for this hotspot yet.")
 

@@ -51,6 +51,38 @@ def get_witnesses_for_hotspot(db: Database, address: str, limit: int = 1000):
     return db.fetch_list(aql)
 
 
+def get_witnesses_of_hotspot(db: Database, address: str, limit: int = 1000):
+    aql = f"""
+            let hotspot = DOCUMENT('hotspots/{address}')
+            for v, e, p in 1..1 outbound hotspot poc_receipts
+                filter e.is_valid
+                collect beaconer = e._from, witness = e._to into witnessPair = {{
+                    distance_m: GEO_DISTANCE(DOCUMENT(e._from).location_geo, DOCUMENT(e._to).location_geo),
+                    coords_beacon: DOCUMENT(e._from).location_geo.coordinates,
+                    coords_witness: DOCUMENT(e._to).location_geo.coordinates,
+                    elevation_witness: DOCUMENT(e._to).elevation,
+                    gain_witness: DOCUMENT(e._to).gain,
+                    tx_power: e.tx_power,
+                    rssi: e.signal,
+                    snr: e.snr,
+                    witness_owner: DOCUMENT(e._to).owner
+                }}
+                limit {limit}
+                RETURN {{_from: LAST(SPLIT(beaconer, "/")), _to: LAST(SPLIT(witness, "/")), 
+                    distance_m: witnessPair[0].distance_m, 
+                    coords_beacon: witnessPair[0].coords_beacon,
+                    coords_witness: witnessPair[0].coords_witness,
+                    elevation_witness: witnessPair[0].elevation_witness,
+                    gain_witness: witnessPair[0].gain_witness,
+                    elevation_beacon: hotspot.elevation,
+                    gain_beacon: hotspot.gain,
+                    tx_power: AVG(witnessPair[*].tx_power),
+                    rssi: AVG(witnessPair[*].rssi),
+                    snr: AVG(witnessPair[*].snr),
+                    witness_owner: witnessPair[0].witness_owner}}"""
+    return db.fetch_list(aql)
+
+
 def get_hotspot_dict(db: Database, hotspot_address: str):
     aql = f"""
     for hotspot in hotspots
