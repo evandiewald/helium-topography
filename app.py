@@ -231,6 +231,6 @@ if run_button:
             st.subheader("Distance vs. RSSI")
             st.plotly_chart(plot_distance_vs_rssi(outliers_df))
 
-        except:
+        except ValueError or TypeError:
             st.error("Error processing simulation. This likely means that we have not loaded any witness data for this hotspot yet.")
 
