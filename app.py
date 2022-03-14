@@ -35,7 +35,7 @@ def load_model(path: str):
 
 
 svm = load_model(TRAINED_SVM_PATH)
-gp = load_model(TRAINED_GP_PATH)
+# gp = load_model(TRAINED_GP_PATH)
 iso_forest = load_model(TRAINED_ISO_PATH)
 
 # put db credentials in .env file
@@ -191,7 +191,8 @@ st.title("Helium Topographical Analysis")
 # hotspot_address = "11PJ5fKGmL3or49Kers5ercC9DfYr2BQMeYE3QCbaogvf25e91h"
 hotspot_address = st.text_input("Hotspot Address", placeholder="11PJ5fKGmL3or49Kers5ercC9DfYr2BQMeYE3QCbaogvf25e91h")
 
-model_type = st.radio("Select Regression Model Type", ["SVM", "Gaussian Process"])
+# model_type = st.radio("Select Regression Model Type", ["SVM", "Gaussian Process"])
+model_type = "SVM"
 k = st.slider("Number of res8 KRings for location verification", min_value=1, max_value=9, step=1, value=5)
 run_button = st.button("Run Simulation")
 if run_button:
