@@ -3,11 +3,12 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import pickle
-from typing import List
+from typing import List, Literal
 
 import streamlit as st
 from dotenv import load_dotenv
 from pyArango.connection import Connection, Database
+from pyArango.theExceptions import AQLFetchError
 import os
 import rasterio
 from arango_queries import get_hotspot_dict, get_witnesses_for_hotspot, get_witnesses_of_hotspot
@@ -53,11 +54,13 @@ db: Database = c['helium-graphs']
 
 
 # EVALUATION
-def generate_features(db: Database, hotspot_address: str):
+def generate_features(db: Database, hotspot_address: str, witness_direction: Literal["inbound", "outbound"] = "inbound"):
     hotspot_dict = get_hotspot_dict(db, hotspot_address)
-    # witness_paths = get_witnesses_for_hotspot(db, hotspot_address, limit=1000)
-    witness_paths = get_witnesses_of_hotspot(db, hotspot_address, limit=1000)
 
+    if witness_direction == "inbound":
+        witness_paths = get_witnesses_for_hotspot(db, hotspot_address, limit=1000)
+    else:
+        witness_paths = get_witnesses_of_hotspot(db, hotspot_address, limit=1000)
 
     with rasterio.open(os.getenv("VRT_PATH")) as dataset:
         elevation_map, window = get_local_elevation_map(dataset, hotspot_dict["latitude"], hotspot_dict["longitude"], range_km=250)
@@ -193,13 +196,14 @@ hotspot_address = st.text_input("Hotspot Address", placeholder="11PJ5fKGmL3or49K
 
 # model_type = st.radio("Select Regression Model Type", ["SVM", "Gaussian Process"])
 model_type = "SVM"
+witness_direction: str = st.radio("Select Witness Direction", ["Inbound", "Outbound"])
 k = st.slider("Number of res8 KRings for location verification", min_value=1, max_value=9, step=1, value=5)
 run_button = st.button("Run Simulation")
 if run_button:
     with st.spinner("Running Monte Carlo Simulation..."):
         try:
             hotspot_dict = get_hotspot_dict(db, hotspot_address)
-            features_df, details_df, witness_coords, profiles = generate_features(db, hotspot_address)
+            features_df, details_df, witness_coords, profiles = generate_features(db, hotspot_address, witness_direction.lower())
             outliers_df = find_outliers(features_df, details_df, iso_forest)
 
             if model_type == "SVM":
@@ -232,6 +236,6 @@ if run_button:
             st.subheader("Distance vs. RSSI")
             st.plotly_chart(plot_distance_vs_rssi(outliers_df))
 
-        except ValueError or TypeError:
-            st.error("Error processing simulation. This likely means that we have not loaded any witness data for this hotspot yet.")
+        except ValueError or TypeError or AQLFetchError:
+            st.error("Error processing simulation. This likely means that we have not loaded any valid witness data for this hotspot yet.")
 

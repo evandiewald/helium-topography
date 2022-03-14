@@ -44,7 +44,9 @@ def extract_topographic_features(d_vec: np.array, elev_vec: np.array):
 def process_witness_paths(witness_paths: List[dict], dataset: DatasetReader, elevation_map: np.array, window: Window, return_coords: bool = False):
     path_features, path_details, witness_coords, profiles = [], [], [], []
     for path in witness_paths:
-        if not path["tx_power"] or path["distance_m"] > 50e3:
+        if not path["tx_power"] or not path["distance_m"]:
+            continue
+        if path["distance_m"] > 50e3:
             continue
         try:
             d_vec, elev_vec = generate_profile_from_path(path, dataset, elevation_map, window)
