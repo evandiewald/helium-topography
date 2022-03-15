@@ -12,7 +12,7 @@ COPY . .
 RUN apt-get upgrade
 RUN apt-get -y update
 
-RUN apt-get -y install unzip curl wget
+RUN apt-get -y install unzip curl wget gcc
 
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 RUN unzip awscliv2.zip
@@ -26,5 +26,8 @@ RUN wget -O static/trained_models/isolation_forest/2022-02-04T16_31_09.mdl https
 RUN aws s3 cp s3://raster/SRTM_GL3/ static/gis-data/SRTM_GL3 --recursive --endpoint-url https://opentopography.s3.sdsc.edu --no-sign-request
 
 RUN pip install --no-cache-dir -r requirements.txt
+
+RUN pip install rasterio
+
 
 CMD ["streamlit", "run", "app.py"]
