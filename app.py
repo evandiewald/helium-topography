@@ -169,7 +169,7 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
     # fig = px.density_mapbox(monte_carlo_results, lat="lat", lon="lon", zoom=8, radius=10)
     # # fig = px.scatter_mapbox(monte_carlo_results, lat="lat", lon="lon", zoom=9)
     # fig.update_layout(mapbox_style="dark",
-    #                   mapbox_accesstoken=open(".mapbox_token").read(),
+    #                   mapbox_accesstoken=os.getenv("MAPBOX_API_KEY"),
     #                   showlegend=False,
     #                   margin={'l':0, 'r':0, 'b':0, 't':0})
     # fig.update(layout_coloraxis_showscale=False)
