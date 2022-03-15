@@ -6,6 +6,7 @@ import pickle
 from typing import List, Literal
 
 import streamlit as st
+import pydeck as pdk
 from dotenv import load_dotenv
 from pyArango.connection import Connection, Database
 from pyArango.theExceptions import AQLFetchError
@@ -106,7 +107,7 @@ def plot_distance_vs_rssi(outliers_df: pd.DataFrame):
     return fig
 
 
-def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hotspot_dict):
+def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hotspot_dict, k):
     mode = model.steps[1][0]
     if mode not in ["svr", "gaussianprocessregressor"]:
         raise TypeError(f"Unknown model type: {model.steps[1][0]}")
@@ -165,13 +166,45 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
     monte_carlo_results = pd.DataFrame([predicted_lat, predicted_lon]).transpose()
     monte_carlo_results.columns = ["lat", "lon"]
 
-    fig = px.density_mapbox(monte_carlo_results, lat="lat", lon="lon", zoom=8, radius=10)
-    # fig = px.scatter_mapbox(monte_carlo_results, lat="lat", lon="lon", zoom=9)
-    fig.update_layout(mapbox_style="dark",
-                      mapbox_accesstoken=open(".mapbox_token").read(),
-                      showlegend=False,
-                      margin={'l':0, 'r':0, 'b':0, 't':0})
-    fig.update(layout_coloraxis_showscale=False)
+    # fig = px.density_mapbox(monte_carlo_results, lat="lat", lon="lon", zoom=8, radius=10)
+    # # fig = px.scatter_mapbox(monte_carlo_results, lat="lat", lon="lon", zoom=9)
+    # fig.update_layout(mapbox_style="dark",
+    #                   mapbox_accesstoken=open(".mapbox_token").read(),
+    #                   showlegend=False,
+    #                   margin={'l':0, 'r':0, 'b':0, 't':0})
+    # fig.update(layout_coloraxis_showscale=False)
+    rings = pd.DataFrame(h3.k_ring(asserted_hex_res8, k))
+    rings.columns = ["hex"]
+
+    fig = pdk.Deck(
+        map_style='mapbox://styles/mapbox/dark-v10',
+        initial_view_state=pdk.ViewState(
+            latitude=monte_carlo_results["lat"].mean(),
+            longitude=monte_carlo_results["lon"].mean(),
+            zoom=10,
+            pitch=0,
+        ),
+        layers=[
+            pdk.Layer(
+                'HexagonLayer',
+                data=monte_carlo_results,
+                get_position='[lon, lat]',
+                radius=1206,
+                elevation_scale=4,
+                elevation_range=[0, 1000],
+                # get_fill_color=[180, 0, 200, 140],
+                pickable=True,
+                extruded=False,
+            ),
+            pdk.Layer(
+                'H3HexagonLayer',
+                data=rings,
+                get_hexagon="hex",
+                get_fill_color=[180, 0, 200, 140],
+                extruded=False
+            )
+        ],
+    )
     return fig, monte_carlo_results
 
 
@@ -190,7 +223,13 @@ def probability_by_hex_resolution(monte_carlo_results: pd.DataFrame, hotspot_dic
     return p, [h3.h3_to_geo_boundary(h) for h in rings]
 
 
-st.title("Helium Topographical Analysis")
+st.title("Helium Topographical Analysis :balloon:")
+
+with st.expander("About"):
+    st.markdown("This research tool uses topographic datasets, machine learning, and a graph databases to help identify gaming activity on the "
+                "Helium Network. To start, input a hotspot's b58 hash and click `Run Simulation`. Read more about the methodologies "
+                "[here](https://neighborly-beret-bf5.notion.site/Modeling-RF-Propagation-on-the-Helium-Network-with-Topographic-Data-09ad0302eaea46a0a078bbac5f24c2a0).")
+    st.markdown("[Github](https://github.com/evandiewald/helium-topography)")
 # hotspot_address = "11PJ5fKGmL3or49Kers5ercC9DfYr2BQMeYE3QCbaogvf25e91h"
 hotspot_address = st.text_input("Hotspot Address", placeholder="11PJ5fKGmL3or49Kers5ercC9DfYr2BQMeYE3QCbaogvf25e91h")
 
@@ -207,7 +246,7 @@ if run_button:
             outliers_df = find_outliers(features_df, details_df, iso_forest)
 
             if model_type == "SVM":
-                fig, results = monte_carlo_trilateration(features_df, witness_coords, svm, hotspot_dict)
+                fig, results = monte_carlo_trilateration(features_df, witness_coords, svm, hotspot_dict, k)
             elif model_type == "Gaussian Process":
                 fig, results = monte_carlo_trilateration(features_df, witness_coords, gp, hotspot_dict)
             else:
@@ -215,27 +254,68 @@ if run_button:
 
             p, polygons = probability_by_hex_resolution(results, hotspot_dict, k)
 
-            for polygon in polygons:
-                hex_lat = [c[0] for c in polygon]
-                hex_lon = [c[1] for c in polygon]
-                fig.add_scattermapbox(lat=hex_lat, lon=hex_lon, fill="toself", marker={"size": 0, "color": "red"})
-            fig.add_scattermapbox(lat=[np.mean(results["lat"])], lon=[np.mean(results["lon"])],
-                                  hovertemplate="Predicted Location", marker={"size": 20})
+            # for polygon in polygons:
+            #     hex_lat = [c[0] for c in polygon]
+            #     hex_lon = [c[1] for c in polygon]
+            #     fig.add_scattermapbox(lat=hex_lat, lon=hex_lon, fill="toself", marker={"size": 0, "color": "red"})
+            # fig.add_scattermapbox(lat=[np.mean(results["lat"])], lon=[np.mean(results["lon"])],
+            #                       hovertemplate="Predicted Location", marker={"size": 20})
             st.subheader("Trilateration Results")
-            st.plotly_chart(fig)
+
+            with st.expander("About this Chart"):
+                st.markdown("[**Multi-trilateration**](https://en.wikipedia.org/wiki/True-range_multilateration)"
+                            " is a mathematical technique for geo locating a point given its known distances from two other points."
+                            "In this implementation, we use topographic and signal-quality features to predict a hotspot's true location based on its "
+                            "witness data. Specifically, these features are fed into a trained machine learning model to predict distances from "
+                            "beaconer to witness before solving the trilateration problem in a monte carlo simulation. The more witness data we have,"
+                            "the better the prediction.")
+                st.markdown("In these charts, we plot a heatmap of those predicted locations (brown->red heatmap)"
+                            "and compare it to the hotspot's asserted location (pink hexes). The more spread you see in the trilateration solutions,"
+                            "the more likely a hotspot is spoofing their location or witness activity.")
+                st.image("static/assets/spoofer-ex.png", caption="A likely spoofer with a broad confidence interval in the trilateration solutions.")
+                st.image("static/assets/known-good-ex.png", caption="A nominal hotspot, where most solutions lie near the asserted location.")
+
+            # st.plotly_chart(fig)
+            st.pydeck_chart(fig)
             st.metric(f"Percentage of trilateration predictions that lie within {k} kRings from asserted res8 hex: ", value=f"{p}%")
 
             st.subheader("Elevation Profiles")
 
+            with st.expander("About this Chart"):
+                st.markdown("This plot shows the line-of-sight profiles between beaconer and witness for this hotspot. Imagine placing a rope on the "
+                            "ground between the two radios and tracking elevation vs. distance. We use an outlier detection algorithm to identify"
+                            "anomalous witness receipts, which have dubious signal quality given their line-of-sight characteristics. In this chart, "
+                            "outliers show up as red traces, and nominal profiles are green. You can isolate individual traces by double clicking"
+                            "the legend.")
+
             st.plotly_chart(plot_elevation_profiles(profiles))
 
             st.subheader("Gaming Analysis")
+
+            with st.expander("About this Dataframe"):
+                st.markdown("This dataframe shows all the [topographic](https://en.wikipedia.org/wiki/Surface_roughness)"
+                            " and signal quality data that we use in our models. Each row represents an "
+                            "individual witness pair for this hotspot. The `score` column corresponds to how anomalous that witness path is "
+                            "according to our outlier detection algorithm (more negative -> higher likelihood that it is an outlier). "
+                            "You can sort any column by clicking the header. The indices match "
+                            "the trace identifiers in the elevation profiles chart above.")
+
             st.metric(f"Number of Outlier Receipts / Total Witnesses", value=f"{np.sum(outliers_df['score'] < 0)} / {outliers_df.shape[0]}")
             st.dataframe(outliers_df)
 
             st.subheader("Distance vs. RSSI")
+
+            with st.expander("About this Chart"):
+                st.markdown("The [Free Space Path Loss](https://www.pasternack.com/t-calculator-fspl.aspx) equation defines a theoretical "
+                            "relationship between RF signal strength (RSSI) and the propagation distance. FSPL assumes an unobstructed line of "
+                            "sight between transmitter and receiver, which can be problematic (hence the inclusion of topographic data in this"
+                            "analysis). However, gamers may use packet forwarding software to alter the signal characteristics of received"
+                            "packets, which should be revealed in this chart. Individual points are colored according to the outlier detection"
+                            "algorithm described above.")
+                st.image("static/assets/spoofer-rssi.png", caption="Evidence of packet forwarding software - hard RSSI floor at -140 dB.")
+
             st.plotly_chart(plot_distance_vs_rssi(outliers_df))
 
-        except ValueError or TypeError or AQLFetchError:
+        except (ValueError, TypeError, AQLFetchError):
             st.error("Error processing simulation. This likely means that we have not loaded any valid witness data for this hotspot yet.")
 
