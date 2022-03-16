@@ -25,6 +25,8 @@ load_dotenv()
 TRAINED_SVM_PATH = "static/trained_models/svm/2022-02-06T16_23_54.mdl"
 TRAINED_GP_PATH = "static/trained_models/gaussian_process/2022-02-04T16_28_14.mdl"
 TRAINED_ISO_PATH = "static/trained_models/isolation_forest/2022-02-04T16_31_09.mdl"
+GAMING_DISTRIBUTION_PATH = "static/assets/gaming_results.csv"
+NOMINAL_DISTRIBUTION_PATH = "static/assets/nominal_results.csv"
 
 
 @st.experimental_singleton
@@ -36,9 +38,17 @@ def load_model(path: str):
     return model
 
 
+@st.experimental_singleton
+def load_csv(path: str):
+    return pd.read_csv(path)
+
+
 svm = load_model(TRAINED_SVM_PATH)
 # gp = load_model(TRAINED_GP_PATH)
 iso_forest = load_model(TRAINED_ISO_PATH)
+
+gaming_dist = load_csv(GAMING_DISTRIBUTION_PATH)
+nominal_dist = load_csv(NOMINAL_DISTRIBUTION_PATH)
 
 # put db credentials in .env file
 load_dotenv()
@@ -107,7 +117,8 @@ def plot_distance_vs_rssi(outliers_df: pd.DataFrame):
     return fig
 
 
-def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hotspot_dict, k):
+def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hotspot_dict, k, show_radii=False,
+                              show_predictions=True, show_asserted_location=True):
     mode = model.steps[1][0]
     if mode not in ["svr", "gaussianprocessregressor"]:
         raise TypeError(f"Unknown model type: {model.steps[1][0]}")
@@ -124,6 +135,9 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
     asserted_location = (hotspot_dict["latitude"], hotspot_dict["longitude"])
     asserted_hex_res8 = h3.geo_to_h3(asserted_location[0], asserted_location[1], 8)
     predicted_locations = []
+
+    # ADDED FOR TEMPORARY VISUALIZATION
+    circles = []
     for i in range(N):
         idx1, idx2, idx3 = np.random.permutation(X_eval.shape[0])[:3]
         u = haversine(witness_coords[idx1], witness_coords[idx2], unit=Unit.KILOMETERS)
@@ -154,18 +168,26 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
         pt_1 = inverse_haversine(witness_coords[idx1], r1, phi_1)
         pt_2 = inverse_haversine(witness_coords[idx1], r1, phi_2)
 
-        if haversine(witness_coords[idx3], pt_1) < haversine(witness_coords[idx3], pt_2):
+        # if haversine(witness_coords[idx3], pt_1) < haversine(witness_coords[idx3], pt_2):
+        if haversine(asserted_location, pt_1) < haversine(asserted_location, pt_2):
             predicted_location = pt_1
         else:
             predicted_location = pt_2
 
         predicted_locations.append(predicted_location)
 
+        ##TEMP
+        # lat, lon, radius
+        circles.append([witness_coords[idx1][0], witness_coords[idx1][1], r1*1000])
+        # circles.append([witness_coords[idx2][0], witness_coords[idx2][1], r2*1000])
+
     predicted_lat = [c[0] for c in predicted_locations]
     predicted_lon = [c[1] for c in predicted_locations]
     monte_carlo_results = pd.DataFrame([predicted_lat, predicted_lon]).transpose()
     monte_carlo_results.columns = ["lat", "lon"]
 
+    circles_df = pd.DataFrame(circles)
+    circles_df.columns = ["lat", "lon", "radius"]
     # fig = px.density_mapbox(monte_carlo_results, lat="lat", lon="lon", zoom=8, radius=10)
     # # fig = px.scatter_mapbox(monte_carlo_results, lat="lat", lon="lon", zoom=9)
     # fig.update_layout(mapbox_style="dark",
@@ -184,7 +206,26 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
             zoom=10,
             pitch=0,
         ),
-        layers=[
+        layers=[],
+    )
+
+    if show_radii:
+        fig.layers.append(
+            pdk.Layer(
+                'ScatterplotLayer',
+                data=circles_df,
+                get_position='[lon, lat]',
+                get_radius="radius",
+                filled=False,
+                stroked=True,
+                get_line_color=[0, 255, 0, 10],
+                get_line_width=100,
+                get_fill_color=[0, 0, 0, 10]
+            )
+        )
+
+    if show_predictions:
+        fig.layers.append(
             pdk.Layer(
                 'HexagonLayer',
                 data=monte_carlo_results,
@@ -195,7 +236,11 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
                 # get_fill_color=[180, 0, 200, 140],
                 pickable=True,
                 extruded=False,
-            ),
+            )
+        )
+
+    if show_asserted_location:
+        fig.layers.append(
             pdk.Layer(
                 'H3HexagonLayer',
                 data=rings,
@@ -203,8 +248,8 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
                 get_fill_color=[180, 0, 200, 140],
                 extruded=False
             )
-        ],
-    )
+        )
+
     return fig, monte_carlo_results
 
 
@@ -223,6 +268,27 @@ def probability_by_hex_resolution(monte_carlo_results: pd.DataFrame, hotspot_dic
     return p, [h3.h3_to_geo_boundary(h) for h in rings]
 
 
+def bayesian_inference(gaming_dist, nominal_dist, outlier_df, prior: float = 0.1) -> float:
+    """
+    Use bayesian stats to infer the likelihood of a gamer based on percentage of anomalous paths.
+    :param gaming_dist:
+    :param nominal_dist:
+    :param outlier_df:
+    :param prior: The assumed ratio of overall gaming on the network
+    :return:
+    """
+    # find percentage of anomalous receipts (evidence)
+    E = len(outlier_df[outlier_df["classification"] < 0]) / len(outlier_df)
+    # likelihood of evidence given gaming, P(E|G) (within 10%)
+    pe_g = len(gaming_dist[np.abs((gaming_dist["percent"] - E)) < 0.01]) / len(gaming_dist)
+    # likelihood of evidence given nominal, P(E|~G) (within 10%)
+    pe_n = len(nominal_dist[np.abs((nominal_dist["percent"] - E)) < 0.01]) / len(nominal_dist)
+    # solve for posterior
+    pg_e = 1 / (1 + (1 / prior - 1) * (pe_n / pe_g))
+    return pg_e
+
+
+
 st.title("Helium Topographical Analysis :balloon:")
 
 with st.expander("About"):
@@ -236,6 +302,9 @@ hotspot_address = st.text_input("Hotspot Address", placeholder="11PJ5fKGmL3or49K
 # model_type = st.radio("Select Regression Model Type", ["SVM", "Gaussian Process"])
 model_type = "SVM"
 witness_direction: str = st.radio("Select Witness Direction", ["Inbound", "Outbound"])
+show_radii = st.checkbox("Show Trilateration Radii", value=False)
+show_predictions = st.checkbox("Show Trilateration Heatmap", value=True)
+show_asserted_location = st.checkbox("Show Asserted Location", value=True)
 k = st.slider("Number of res8 KRings for location verification", min_value=1, max_value=9, step=1, value=5)
 run_button = st.button("Run Simulation")
 if run_button:
@@ -246,20 +315,16 @@ if run_button:
             outliers_df = find_outliers(features_df, details_df, iso_forest)
 
             if model_type == "SVM":
-                fig, results = monte_carlo_trilateration(features_df, witness_coords, svm, hotspot_dict, k)
+                fig, results = monte_carlo_trilateration(features_df, witness_coords, svm, hotspot_dict, k, show_radii,
+                                                         show_predictions, show_asserted_location)
             elif model_type == "Gaussian Process":
-                fig, results = monte_carlo_trilateration(features_df, witness_coords, gp, hotspot_dict)
+                # fig, results = monte_carlo_trilateration(features_df, witness_coords, gp, hotspot_dict, k, show_radii, show_predictions)
+                pass
             else:
                 raise ValueError("Unknown Model Type.")
 
             p, polygons = probability_by_hex_resolution(results, hotspot_dict, k)
 
-            # for polygon in polygons:
-            #     hex_lat = [c[0] for c in polygon]
-            #     hex_lon = [c[1] for c in polygon]
-            #     fig.add_scattermapbox(lat=hex_lat, lon=hex_lon, fill="toself", marker={"size": 0, "color": "red"})
-            # fig.add_scattermapbox(lat=[np.mean(results["lat"])], lon=[np.mean(results["lon"])],
-            #                       hovertemplate="Predicted Location", marker={"size": 20})
             st.subheader("Trilateration Results")
 
             with st.expander("About this Chart"):
@@ -301,6 +366,10 @@ if run_button:
                             "the trace identifiers in the elevation profiles chart above.")
 
             st.metric(f"Number of Outlier Receipts / Total Witnesses", value=f"{np.sum(outliers_df['score'] < 0)} / {outliers_df.shape[0]}")
+
+            posterior = bayesian_inference(gaming_dist, nominal_dist, outliers_df, prior=0.1)
+            st.metric("Gaming Probability", value=f"{np.round(posterior * 100, 1)} %")
+
             st.dataframe(outliers_df)
 
             st.subheader("Distance vs. RSSI")
