@@ -225,17 +225,49 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
         )
 
     if show_predictions:
+        # fig.layers.append(
+            # pdk.Layer(
+            #     'HexagonLayer',
+            #     data=monte_carlo_results,
+            #     get_position='[lon, lat]',
+            #     radius=1206,
+            #     elevation_scale=4,
+            #     elevation_range=[0, 1000],
+            #     # get_fill_color=[180, 0, 200, 140],
+            #     pickable=True,
+            #     extruded=False,
+            # )
         fig.layers.append(
             pdk.Layer(
-                'HexagonLayer',
+                'HeatmapLayer',
                 data=monte_carlo_results,
                 get_position='[lon, lat]',
-                radius=1206,
-                elevation_scale=4,
-                elevation_range=[0, 1000],
-                # get_fill_color=[180, 0, 200, 140],
+                get_radius=200,
+                get_fill_color=[255, 255, 255, 140],  # Set an RGBA value for fill
+                pickable=True
+            )
+        )
+        best_guess = [{"lon": np.median(monte_carlo_results["lon"]),
+                       "lat": np.median(monte_carlo_results["lat"]),
+                       "icon_data": {
+                           "url": "https://cdn-icons-png.flaticon.com/512/59/59325.png",
+                           "width": 512,
+                           "height": 512,
+                           "anchorY": 512
+                       }}]
+
+        fig.layers.append(
+            pdk.Layer(
+                'IconLayer',
+                data=best_guess,
+                get_position='[lon, lat]',
+                get_icon='icon_data',
+                get_size=4,
+                size_scale=15,
+                # get_radius=500,
+                # get_fill_color=[0,0, 0],
                 pickable=True,
-                extruded=False,
+                # filled=True
             )
         )
 
@@ -249,6 +281,9 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
                 extruded=False
             )
         )
+
+
+
 
     return fig, monte_carlo_results
 
@@ -277,14 +312,15 @@ def bayesian_inference(gaming_dist, nominal_dist, outlier_df, prior: float = 0.1
     :param prior: The assumed ratio of overall gaming on the network
     :return:
     """
-    # find percentage of anomalous receipts (evidence)
-    E = len(outlier_df[outlier_df["classification"] < 0]) / len(outlier_df)
+    # find percentage of normal receipts (evidence)
+    E = len(outlier_df[outlier_df["classification"] > 0]) / len(outlier_df)
     # likelihood of evidence given gaming, P(E|G) (within 10%)
-    pe_g = len(gaming_dist[np.abs((gaming_dist["percent"] - E)) < 0.01]) / len(gaming_dist)
+    pe_g = len(gaming_dist[((1 - gaming_dist["percent"]) < E)]) / len(gaming_dist)
     # likelihood of evidence given nominal, P(E|~G) (within 10%)
-    pe_n = len(nominal_dist[np.abs((nominal_dist["percent"] - E)) < 0.01]) / len(nominal_dist)
+    pe_n = len(nominal_dist[((1 - nominal_dist["percent"]) < E)]) / len(nominal_dist)
     # solve for posterior
-    pg_e = 1 / (1 + (1 / prior - 1) * (pe_n / pe_g))
+    # pg_e = 1 / (1 + ((1 / prior) - 1) * (pe_n / pe_g))
+    pg_e = pe_g * prior / pe_n
     return pg_e
 
 
@@ -330,13 +366,13 @@ if run_button:
             with st.expander("About this Chart"):
                 st.markdown("[**Multi-trilateration**](https://en.wikipedia.org/wiki/True-range_multilateration)"
                             " is a mathematical technique for geo locating a point given its known distances from two other points."
-                            "In this implementation, we use topographic and signal-quality features to predict a hotspot's true location based on its "
+                            " In this implementation, we use topographic and signal-quality features to predict a hotspot's true location based on its "
                             "witness data. Specifically, these features are fed into a trained machine learning model to predict distances from "
                             "beaconer to witness before solving the trilateration problem in a monte carlo simulation. The more witness data we have,"
                             "the better the prediction.")
-                st.markdown("In these charts, we plot a heatmap of those predicted locations (brown->red heatmap)"
-                            "and compare it to the hotspot's asserted location (pink hexes). The more spread you see in the trilateration solutions,"
-                            "the more likely a hotspot is spoofing their location or witness activity.")
+                st.markdown("In these charts, we plot a heatmap of those predicted locations and a crosshair icon signifying the median prediction (i.e. our \"best guess\")."
+                            " Compare these results to the hotspot's asserted location (pink hexes). The more spread and higher error you see in the trilateration solutions,"
+                            " the more likely a hotspot is spoofing their location or witness activity.")
                 st.image("static/assets/spoofer-ex.png", caption="A likely spoofer with a broad confidence interval in the trilateration solutions.")
                 st.image("static/assets/known-good-ex.png", caption="A nominal hotspot, where most solutions lie near the asserted location.")
 
@@ -386,5 +422,6 @@ if run_button:
             st.plotly_chart(plot_distance_vs_rssi(outliers_df))
 
         except (ValueError, TypeError, AQLFetchError):
-            st.error("Error processing simulation. This likely means that we have not loaded any valid witness data for this hotspot yet.")
+            st.error("Error processing simulation. This likely means that we have not loaded any valid witness data for this hotspot yet. "
+                     "The model only considers individual transmit paths under 100km.")
 

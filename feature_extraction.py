@@ -57,7 +57,7 @@ def process_witness_paths(witness_paths: List[dict], dataset: DatasetReader, ele
         # get topographic features
         try:
             features = extract_topographic_features(d_vec, elev_vec)
-        except np.linalg.LinAlgError:
+        except (np.linalg.LinAlgError, SystemError):
             # hotspots are too close to create elevation profile
             continue
 
