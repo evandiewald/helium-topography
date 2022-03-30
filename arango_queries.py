@@ -23,6 +23,7 @@ def get_witnesses_for_hotspot(db: Database, address: str, limit: int = 1000):
     aql = f"""
             let hotspot = DOCUMENT('hotspots/{address}')
             for v, e, p in 1..1 inbound hotspot poc_receipts
+                filter DOCUMENT(e._from).location_geo.coordinates != null
                 collect beaconer = e._from, witness = e._to into witnessPair = {{
                     distance_m: GEO_DISTANCE(DOCUMENT(e._from).location_geo, DOCUMENT(e._to).location_geo),
                     coords_beacon: DOCUMENT(e._from).location_geo.coordinates,
