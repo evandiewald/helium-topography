@@ -117,8 +117,7 @@ def plot_distance_vs_rssi(outliers_df: pd.DataFrame):
     return fig
 
 
-def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hotspot_dict, k, show_radii=False,
-                              show_predictions=True, show_asserted_location=True):
+def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hotspot_dict, k):
     mode = model.steps[1][0]
     if mode not in ["svr", "gaussianprocessregressor"]:
         raise TypeError(f"Unknown model type: {model.steps[1][0]}")
@@ -197,6 +196,15 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
     # fig.update(layout_coloraxis_showscale=False)
     rings = pd.DataFrame(h3.k_ring(asserted_hex_res8, k))
     rings.columns = ["hex"]
+
+    prediction_error = haversine(asserted_location, (np.median(monte_carlo_results["lat"]), np.median(monte_carlo_results["lon"])))
+
+    return monte_carlo_results, circles_df, rings, prediction_error
+
+
+def generate_trilateration_figure(features_df, witness_coords, model, hotspot_dict, k,
+                                  show_radii: bool, show_predictions: bool, show_asserted_location: bool):
+    monte_carlo_results, circles_df, rings, _ = monte_carlo_trilateration(features_df, witness_coords, model, hotspot_dict, k)
 
     fig = pdk.Deck(
         map_style='mapbox://styles/mapbox/dark-v10',
@@ -282,9 +290,6 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
             )
         )
 
-
-
-
     return fig, monte_carlo_results
 
 
@@ -351,7 +356,7 @@ if run_button:
             outliers_df = find_outliers(features_df, details_df, iso_forest)
 
             if model_type == "SVM":
-                fig, results = monte_carlo_trilateration(features_df, witness_coords, svm, hotspot_dict, k, show_radii,
+                fig, results = generate_trilateration_figure(features_df, witness_coords, svm, hotspot_dict, k, show_radii,
                                                          show_predictions, show_asserted_location)
             elif model_type == "Gaussian Process":
                 # fig, results = monte_carlo_trilateration(features_df, witness_coords, gp, hotspot_dict, k, show_radii, show_predictions)
