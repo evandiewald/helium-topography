@@ -45,6 +45,8 @@ session = Session(engine)
 helium_lite_engine = create_engine(os.getenv("POSTGRES_CONNECTION_STRING"))
 helium_lite_session = Session(helium_lite_engine)
 
+dataset = rasterio.open(os.getenv("VRT_PATH"))
+
 
 def get_current_height(engine) -> int:
     return engine.execute("select max(height) from blocks;").one()[0]
@@ -67,7 +69,7 @@ def map_topo_features(x, dataset):
         for i, e in enumerate(rasterio.sample.sample_gen(dataset, index_list, 1)):
             elevation_profile[i] = e
         return extract_topographic_features(d_vec, level_profile(d_vec, elevation_profile))
-    except np.linalg.LinAlgError:
+    except:
         # return nans, but same structure as a valid output to ease processing later
         return {
             "ra": np.nan,
@@ -197,21 +199,9 @@ def upsert_predictions(result_rows, helium_lite_session: Session):
     helium_lite_session.commit()
 
 
-while True:
-    current_height = get_current_height(engine)
-    n_blocks = 1000
-
-    print("Getting gateway inventory")
-    t = time.time()
-    gateway_locations = pd.read_sql("select address, location, gain, elevation from gateway_inventory;", con=engine)
-    print(f"Done, {time.time() - t} s")
-
-    # def get_witness_edges(session, n_blocks, current_height):
-    min_block = current_height - n_blocks
-    print("Getting receipts")
-    t = time.time()
-    poc_receipts_v1 = session.query(Transactions.fields).filter((Transactions.block > min_block) & (Transactions.block < current_height) & (Transactions.type == "poc_receipts_v1")).all()
-    print(f"Done, {time.time() - t} s")
+def get_witness_edges(session: Session):
+    poc_receipts_v1 = session.query(Transactions.fields).filter(
+        (Transactions.block > min_block) & (Transactions.block < current_height) & (Transactions.type == "poc_receipts_v1")).all()
 
     receipts_parsed = []
     for poc_receipt_v1_txn in poc_receipts_v1:
@@ -236,10 +226,29 @@ while True:
     witness_edges["bearing"] = witness_edges.apply(lambda x: get_bearing(x["transmitter_coords"][0], x["transmitter_coords"][1],
                                                                          x["witness_coords"][0], x["witness_coords"][1]), axis=1)
     print(f"Done, {time.time() - t} s")
+    return witness_edges
+
+
+while True:
+    current_height = get_current_height(engine)
+    n_blocks = 1000
+
+    print("Getting gateway inventory")
+    t = time.time()
+    gateway_locations = pd.read_sql("select address, location, gain, elevation from gateway_inventory;", con=engine)
+    print(f"Done, {time.time() - t} s")
+
+    # def get_witness_edges(session, n_blocks, current_height):
+    min_block = current_height - n_blocks
+    print("Getting receipts")
+    t = time.time()
+
 
     print("Generating features")
     t = time.time()
-    dataset = rasterio.open(os.getenv("VRT_PATH"))
+    witness_edges = get_witness_edges(session)
+    print(f"Done, {time.time() - t} s")
+
     n_edges = len(witness_edges)
     path_features, path_details = [], []
 
