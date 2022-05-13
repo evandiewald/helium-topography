@@ -1,4 +1,3 @@
-import aioredis
 import sqlalchemy.exc
 
 from fastapi import FastAPI, APIRouter
@@ -13,10 +12,6 @@ from sqlalchemy.engine import Engine, create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from dotenv import load_dotenv
-
-from fastapi_cache import FastAPICache
-from fastapi_cache.backends.redis import RedisBackend
-from fastapi_cache.decorator import cache
 
 
 load_dotenv()
@@ -39,7 +34,6 @@ def get_results_for_hotspot(session: Session, address: str):
 
 
 @router.get("/topography/{address}")
-# @cache(expire=3600)
 async def topography(request: Request, response: Response, address: str):
     result = get_results_for_hotspot(session, address)
     if result:
@@ -48,8 +42,3 @@ async def topography(request: Request, response: Response, address: str):
         return JSONResponse({"NoResultFound": "No topography result found for this address"}, status_code=500)
 
 app.include_router(router)
-
-# @app.on_event("startup")
-# async def startup():
-#     redis = aioredis.from_url("redis://localhost", encoding="utf8", decode_responses=True)
-#     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")

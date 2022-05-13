@@ -163,7 +163,7 @@ def generate_stats(details_df, gateway_locations, eval_mean):
                 pts_in_hex += 1
         try:
             p = str(np.round(100 * pts_in_hex / n_points, 1))
-        except ZeroDivisionError:
+        except (ZeroDivisionError, SystemError):
             p = "0"
 
 
