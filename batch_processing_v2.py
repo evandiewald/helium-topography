@@ -50,44 +50,7 @@ def get_current_height(engine) -> int:
     return engine.execute("select max(height) from blocks;").one()[0]
 
 
-current_height = get_current_height(engine)
-n_blocks = 1000
 
-print("Getting gateway inventory")
-t = time.time()
-gateway_locations = pd.read_sql("select address, location, gain, elevation from gateway_inventory;", con=engine)
-print(f"Done, {time.time() - t} s")
-
-# def get_witness_edges(session, n_blocks, current_height):
-min_block = current_height - n_blocks
-print("Getting receipts")
-t = time.time()
-poc_receipts_v1 = session.query(Transactions.fields).filter((Transactions.block > min_block) & (Transactions.block < current_height) & (Transactions.type == "poc_receipts_v1")).all()
-print(f"Done, {time.time() - t} s")
-
-receipts_parsed = []
-for poc_receipt_v1_txn in poc_receipts_v1:
-    txn_parsed = PocReceiptsV1.parse_obj(poc_receipt_v1_txn[0])
-    for w in txn_parsed.path[0].witnesses:
-        if txn_parsed.path[0].receipt:
-            receipts_parsed.append({"transmitter_address": txn_parsed.path[0].challengee,
-                                    "witness_address": w.gateway,
-                                    "rssi": w.signal,
-                                    "snr": w.snr,
-                                    "tx_power": txn_parsed.path[0].receipt.tx_power})
-
-print("Performing some pandas transforms")
-t = time.time()
-witness_edges = pd.DataFrame(receipts_parsed).groupby(["transmitter_address", "witness_address"]).mean().reset_index()
-witness_edges = witness_edges.merge(gateway_locations, left_on="transmitter_address", right_on="address")
-witness_edges = witness_edges.merge(gateway_locations, left_on="witness_address", right_on="address")
-witness_edges["transmitter_coords"] = witness_edges["location_x"].map(h3.h3_to_geo)
-witness_edges["witness_coords"] = witness_edges["location_y"].map(h3.h3_to_geo)
-witness_edges["distance_m"] = witness_edges.apply(lambda x: haversine(x["transmitter_coords"], x["witness_coords"], Unit.METERS), axis=1)
-
-witness_edges["bearing"] = witness_edges.apply(lambda x: get_bearing(x["transmitter_coords"][0], x["transmitter_coords"][1],
-                                                                     x["witness_coords"][0], x["witness_coords"][1]), axis=1)
-print(f"Done, {time.time() - t} s")
 
 
 def map_topo_features(x, dataset):
@@ -118,15 +81,6 @@ def map_topo_features(x, dataset):
             "n_barriers": np.nan
         }
 
-
-print("Generating features")
-t = time.time()
-dataset = rasterio.open(os.getenv("VRT_PATH"))
-n_edges = len(witness_edges)
-path_features, path_details = [], []
-
-witness_edges = witness_edges[(witness_edges["distance_m"] > 50) & (witness_edges["distance_m"] < 50e3)]
-witness_edges = witness_edges.sort_values("witness_address") # sort so that we go through each witness
 
 
 
@@ -243,62 +197,112 @@ def upsert_predictions(result_rows, helium_lite_session: Session):
     helium_lite_session.commit()
 
 
-gateway_locations = gateway_locations.set_index("address").dropna()
-gateway_locations["asserted_location"] = gateway_locations["location"].map(h3.h3_to_geo)
-gateway_locations["asserted_hex_res8"] = gateway_locations.apply(lambda x: h3.h3_to_parent(x["location"], 8), axis=1)
+while True:
+    current_height = get_current_height(engine)
+    n_blocks = 1000
 
-counter = 0
-# # tried .apply, iterrows(), to_dict -> iterate. this is fastest by a slight margin (~50s / 1000 rows)
-for i, x in witness_edges.iterrows():
-    counter += 1
-    if counter % 1000 == 0:
+    print("Getting gateway inventory")
+    t = time.time()
+    gateway_locations = pd.read_sql("select address, location, gain, elevation from gateway_inventory;", con=engine)
+    print(f"Done, {time.time() - t} s")
 
-        # run the simulations in chunks to limit memory usage and ensure that data is inserted less sporadically
+    # def get_witness_edges(session, n_blocks, current_height):
+    min_block = current_height - n_blocks
+    print("Getting receipts")
+    t = time.time()
+    poc_receipts_v1 = session.query(Transactions.fields).filter((Transactions.block > min_block) & (Transactions.block < current_height) & (Transactions.type == "poc_receipts_v1")).all()
+    print(f"Done, {time.time() - t} s")
 
-        features_df = pd.DataFrame(path_features)
-        details_df = pd.DataFrame(path_details)
+    receipts_parsed = []
+    for poc_receipt_v1_txn in poc_receipts_v1:
+        txn_parsed = PocReceiptsV1.parse_obj(poc_receipt_v1_txn[0])
+        for w in txn_parsed.path[0].witnesses:
+            if txn_parsed.path[0].receipt:
+                receipts_parsed.append({"transmitter_address": txn_parsed.path[0].challengee,
+                                        "witness_address": w.gateway,
+                                        "rssi": w.signal,
+                                        "snr": w.snr,
+                                        "tx_power": txn_parsed.path[0].receipt.tx_power})
 
-        X_eval = np.array(features_df.drop(["distance_m"], axis=1))
+    print("Performing some pandas transforms")
+    t = time.time()
+    witness_edges = pd.DataFrame(receipts_parsed).groupby(["transmitter_address", "witness_address"]).mean().reset_index()
+    witness_edges = witness_edges.merge(gateway_locations, left_on="transmitter_address", right_on="address")
+    witness_edges = witness_edges.merge(gateway_locations, left_on="witness_address", right_on="address")
+    witness_edges["transmitter_coords"] = witness_edges["location_x"].map(h3.h3_to_geo)
+    witness_edges["witness_coords"] = witness_edges["location_y"].map(h3.h3_to_geo)
+    witness_edges["distance_m"] = witness_edges.apply(lambda x: haversine(x["transmitter_coords"], x["witness_coords"], Unit.METERS), axis=1)
 
-        eval_mean = svm.predict(X_eval)
-        outliers = iso_forest.predict(features_df)
-        details_df["outliers"] = outliers
+    witness_edges["bearing"] = witness_edges.apply(lambda x: get_bearing(x["transmitter_coords"][0], x["transmitter_coords"][1],
+                                                                         x["witness_coords"][0], x["witness_coords"][1]), axis=1)
+    print(f"Done, {time.time() - t} s")
 
-        result_rows = generate_stats(details_df, gateway_locations, eval_mean)
-        upsert_predictions(result_rows, helium_lite_session)
+    print("Generating features")
+    t = time.time()
+    dataset = rasterio.open(os.getenv("VRT_PATH"))
+    n_edges = len(witness_edges)
+    path_features, path_details = [], []
 
-        print(f"{counter} / {n_edges}, dt: {time.time() - t} s")
-        t = time.time()
-        path_features, path_details = [], []
-
-
-
-    if x["distance_m"] > 50e3 or x["distance_m"] < 50:
-        continue
-
-    features = map_topo_features(x, dataset)
-    if np.isnan(features["ra"]):
-        continue
-
-    if features:
-        features["tx_power"] = x["tx_power"]
-        features["gain_beacon"] = x["gain_x"]
-        features["gain_witness"] = x["gain_y"]
-        features["rssi"] = x["rssi"]
-        features["snr"] = x["snr"]
-        features["distance_m"] = x["distance_m"]
-
-        details = {"transmitter_address": x["transmitter_address"],
-                   "witness_address": x["witness_address"],
-                   "transmitter_coords": x["transmitter_coords"]}
-
-        path_features.append(features)
-        path_details.append(details)
-    else:
-        continue
+    witness_edges = witness_edges[(witness_edges["distance_m"] > 50) & (witness_edges["distance_m"] < 50e3)]
+    witness_edges = witness_edges.sort_values("witness_address") # sort so that we go through each witness
 
 
-print(f"Done, {time.time() - t} s")
+    gateway_locations = gateway_locations.set_index("address").dropna()
+    gateway_locations["asserted_location"] = gateway_locations["location"].map(h3.h3_to_geo)
+    gateway_locations["asserted_hex_res8"] = gateway_locations.apply(lambda x: h3.h3_to_parent(x["location"], 8), axis=1)
+
+    counter = 0
+    # # tried .apply, iterrows(), to_dict -> iterate. this is fastest by a slight margin (~50s / 1000 rows)
+    for i, x in witness_edges.iterrows():
+        counter += 1
+        if counter % 1000 == 0:
+
+            # run the simulations in chunks to limit memory usage and ensure that data is inserted less sporadically
+
+            features_df = pd.DataFrame(path_features)
+            details_df = pd.DataFrame(path_details)
+
+            X_eval = np.array(features_df.drop(["distance_m"], axis=1))
+
+            eval_mean = svm.predict(X_eval)
+            outliers = iso_forest.predict(features_df)
+            details_df["outliers"] = outliers
+
+            result_rows = generate_stats(details_df, gateway_locations, eval_mean)
+            upsert_predictions(result_rows, helium_lite_session)
+
+            print(f"{counter} / {n_edges}, dt: {time.time() - t} s")
+            t = time.time()
+            path_features, path_details = [], []
+
+
+
+        if x["distance_m"] > 50e3 or x["distance_m"] < 50:
+            continue
+
+        features = map_topo_features(x, dataset)
+        if np.isnan(features["ra"]):
+            continue
+
+        if features:
+            features["tx_power"] = x["tx_power"]
+            features["gain_beacon"] = x["gain_x"]
+            features["gain_witness"] = x["gain_y"]
+            features["rssi"] = x["rssi"]
+            features["snr"] = x["snr"]
+            features["distance_m"] = x["distance_m"]
+
+            details = {"transmitter_address": x["transmitter_address"],
+                       "witness_address": x["witness_address"],
+                       "transmitter_coords": x["transmitter_coords"]}
+
+            path_features.append(features)
+            path_details.append(details)
+        else:
+            continue
+
+
+    print(f"Done, {time.time() - t} s")
 
 
 
