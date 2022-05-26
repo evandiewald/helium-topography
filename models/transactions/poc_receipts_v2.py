@@ -13,6 +13,7 @@ class Witness(BaseModel):
     signal: int
     snr: float
     timestamp: int
+    location: str
 
 
 class Receipt(BaseModel):
@@ -30,17 +31,18 @@ class Receipt(BaseModel):
 
 class PathElement(BaseModel):
     challengee: str
+    challengee_owner: str
+    challengee_location: str
     receipt: Optional[Receipt]
     witnesses: List[Witness]
 
 
 class PocReceiptsV2(BaseModel):
-    block: int
-    block_hash: str
     type: str
-    challenger: str
     secret: str
-    onion_key_hash: str
-    path: List[PathElement]
-    fee: int
     block_hash: str
+    challenger: str
+    onion_key_hash: str
+    challenger_owner: str
+    fee: int
+    hash: str
