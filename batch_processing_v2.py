@@ -11,6 +11,7 @@ from connection import connect
 import pandas as pd
 from models.tables import Transactions, TopographyResults
 from models.transactions.poc_receipts_v1 import PocReceiptsV1
+from models.transactions.poc_receipts_v2 import PocReceiptsV2
 
 from feature_extraction import *
 
@@ -205,12 +206,12 @@ def upsert_predictions(result_rows, helium_lite_session: Session):
 
 
 def get_witness_edges(session: Session):
-    poc_receipts_v1 = session.query(Transactions.fields).filter(
+    poc_receipts_v2 = session.query(Transactions.fields).filter(
         (Transactions.block > min_block) & (Transactions.block < current_height) & (Transactions.type == "poc_receipts_v2")).all()
 
     receipts_parsed = []
-    for poc_receipt_v1_txn in poc_receipts_v1:
-        txn_parsed = PocReceiptsV1.parse_obj(poc_receipt_v1_txn[0])
+    for poc_receipt_v2_txn in poc_receipts_v2:
+        txn_parsed = PocReceiptsV2.parse_obj(poc_receipt_v2_txn[0])
         for w in txn_parsed.path[0].witnesses:
             if txn_parsed.path[0].receipt:
                 receipts_parsed.append({"transmitter_address": txn_parsed.path[0].challengee,
