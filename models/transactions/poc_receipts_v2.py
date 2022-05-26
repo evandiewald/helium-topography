@@ -44,5 +44,6 @@ class PocReceiptsV2(BaseModel):
     challenger: str
     onion_key_hash: str
     challenger_owner: str
+    path: List[PathElement]
     fee: int
     hash: str
