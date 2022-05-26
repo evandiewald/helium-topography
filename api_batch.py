@@ -24,6 +24,9 @@ engine = create_engine(os.getenv("POSTGRES_CONNECTION_STRING"))
 session = Session(engine)
 
 
+
+
+
 def get_results_for_hotspot(session: Session, address: str):
     stmt = select(TopographyResults).filter_by(address=address)
     try:
@@ -40,5 +43,36 @@ async def topography(request: Request, response: Response, address: str):
         return result
     else:
         return JSONResponse({"NoResultFound": "No topography result found for this address"}, status_code=500)
+
+
+@router.get("/witnesses/{address}")
+async def witnesses(request: Request, response: Response, address: str):
+    sql_same_maker = f"""
+    select
+
+    rx_address as address,
+
+    sum(
+    	CASE WHEN
+    	tx_payer = rx_payer THEN 1
+    	ELSE 0
+    	END
+    )::float / count(tx_address) as same_maker_ratio, 
+
+    count(*) as n_witnessed
+
+    from detailed_receipts
+
+    where rx_address = '{address}'
+     group by rx_address;"""
+
+    try:
+        res = session.execute(sql_same_maker).one()
+        print(res)
+        return JSONResponse({"result": {"address": res[0], "different_maker_ratio": round(1 - res[1], 2), "n_witnessed": int(res[2])}})
+    except sqlalchemy.exc.NoResultFound:
+        return JSONResponse({"NoResultFound": "No witness result found for this address"}, status_code=500)
+
+
 
 app.include_router(router)
