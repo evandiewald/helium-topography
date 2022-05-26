@@ -59,7 +59,7 @@ async def witnesses(request: Request, response: Response, address: str):
     	END
     )::float / count(tx_address) as same_maker_ratio, 
 
-    count(*) as n_witnessed
+    count(distinct(tx_address)) as n_witnessed
 
     from detailed_receipts
 
