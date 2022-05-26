@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import rasterio
+import sqlalchemy.exc
 from sqlalchemy.engine import Engine, create_engine
 from sqlalchemy.orm import Session
 
@@ -196,12 +197,16 @@ def upsert_predictions(result_rows, helium_lite_session: Session):
     entries_to_put = [v for v in result_rows.values()]
     helium_lite_session.bulk_insert_mappings(TopographyResults, entries_to_put)
     helium_lite_session.flush()
-    helium_lite_session.commit()
+    try:
+        helium_lite_session.commit()
+    except sqlalchemy.exc.OperationalError:
+        print("Rolling back bulk insert due to operational error")
+        helium_lite_session.rollback()
 
 
 def get_witness_edges(session: Session):
     poc_receipts_v1 = session.query(Transactions.fields).filter(
-        (Transactions.block > min_block) & (Transactions.block < current_height) & (Transactions.type == "poc_receipts_v1")).all()
+        (Transactions.block > min_block) & (Transactions.block < current_height) & (Transactions.type == "poc_receipts_v2")).all()
 
     receipts_parsed = []
     for poc_receipt_v1_txn in poc_receipts_v1:
