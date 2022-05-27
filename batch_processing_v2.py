@@ -292,7 +292,7 @@ while True:
     gateway_locations["asserted_hex_res8"] = gateway_locations.apply(lambda x: h3.h3_to_parent(x["location"], 8), axis=1)
 
     n_gateways = len(gateway_locations)
-    for i, address in enumerate(gateway_locations["address"]):
+    for i, address in enumerate(gateway_locations.index):
         print("Generating features")
         t = time.time()
 
