@@ -349,8 +349,12 @@ while True:
         outliers = iso_forest.predict(features_df)
         details_df["outliers"] = outliers
 
-        result_rows = generate_stats(details_df, gateway_locations, eval_mean, current_height)
+        try:
+            result_rows = generate_stats(details_df, gateway_locations, eval_mean, current_height)
+        except KeyError:
+            continue
         upsert_predictions(result_rows, helium_lite_session)
+        # print(f"Upserted results for {address}")
 
         path_features, path_details = [], []
 
