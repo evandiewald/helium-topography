@@ -339,6 +339,9 @@ while True:
             else:
                 continue
 
+        if len(path_details) < 1 or len(path_features) < 1:
+            # didn't find any valid edges
+            continue
 
         features_df = pd.DataFrame(path_features)
         details_df = pd.DataFrame(path_details)
