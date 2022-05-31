@@ -1,3 +1,5 @@
+import time
+
 import sqlalchemy.exc
 
 from fastapi import FastAPI, APIRouter
@@ -14,6 +16,7 @@ from sqlalchemy.engine import Engine, create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from dotenv import load_dotenv
+import pandas as pd
 
 
 load_dotenv()
@@ -27,7 +30,6 @@ session = Session(engine)
 
 etl_engine = connection.connect()
 etl_session = Session(etl_engine)
-
 
 
 def get_results_for_hotspot(session: Session, address: str):
@@ -51,30 +53,26 @@ async def topography(request: Request, response: Response, address: str):
 @router.get("/witnesses/{address}")
 async def witnesses(request: Request, response: Response, address: str):
     sql_same_maker = f"""with gateway_details as (select last_block, payer from gateway_inventory where address = '{address}'),
-
+    
     hashes as
     
     (select transaction_hash from transaction_actors 
     where actor_role = 'witness'::transaction_actor_role 
-    and block > (select last_block from gateway_details) - 5000 
+    and block > (select last_block from gateway_details) - 7500 
     and actor = '{address}'),
     
     metadata as
+    (select text(fields->'path'->0->'challengee') as w from transactions where hash in (select * from hashes)),
     
-    (select fields->'path'->0->'witnesses' as w from transactions where hash in (select * from hashes)),
-    
-    results as
-    (select
-    (select array_agg(t -> 'gateway') from jsonb_array_elements(w) as x(t)) as gateway from metadata),
-    
-    witnesses_unnest as
-    (select distinct(text(unnest(gateway))) as witness from results where gateway is not NULL),
     
     witnesses as
-    (select substring(witness from 2 for LENGTH(witness)-2) as witness from witnesses_unnest),
+    (select substring(w from 2 for LENGTH(w)-2) as witness from metadata),
+    
+    
     
     makers as
     (select payer from witnesses b join gateway_inventory g on b.witness = g.address)
+    
     
     select sum(case when payer = (select payer from gateway_details) then 1 else 0 end)::float / count(*) as same_maker_ratio, count(*) as n_witnessed from makers;"""
 
