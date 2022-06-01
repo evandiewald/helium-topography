@@ -300,7 +300,7 @@ while True:
 
         try:
             witness_edges = get_witness_edges_for_address(session, address, n_blocks)
-        except sqlalchemy.exc.NoResultFound:
+        except (sqlalchemy.exc.NoResultFound, KeyError):
             continue
         if witness_edges is None:
             continue
