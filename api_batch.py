@@ -13,7 +13,7 @@ from starlette.responses import Response
 
 import os
 from sqlalchemy.engine import Engine, create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy import select
 from dotenv import load_dotenv
 import pandas as pd
@@ -25,11 +25,11 @@ router = APIRouter(prefix="/api/v1")
 app = FastAPI()
 
 
-engine = create_engine(os.getenv("POSTGRES_CONNECTION_STRING"))
-session = Session(engine)
+lite_engine = create_engine(os.getenv("POSTGRES_CONNECTION_STRING"))
+lite_session = sessionmaker(lite_engine)
 
 etl_engine = connection.connect()
-etl_session = Session(etl_engine)
+etl_session = sessionmaker(etl_engine)
 
 
 def get_results_for_hotspot(session: Session, address: str):
@@ -43,11 +43,12 @@ def get_results_for_hotspot(session: Session, address: str):
 
 @router.get("/topography/{address}")
 async def topography(request: Request, response: Response, address: str):
-    result = get_results_for_hotspot(session, address)
-    if result:
-        return result
-    else:
-        return JSONResponse({"NoResultFound": "No topography result found for this address"}, status_code=500)
+    with lite_session() as sess:
+        result = get_results_for_hotspot(sess, address)
+        if result:
+            return result
+        else:
+            return JSONResponse({"NoResultFound": "No topography result found for this address"}, status_code=500)
 
 
 @router.get("/witnesses/{address}")
@@ -76,11 +77,12 @@ async def witnesses(request: Request, response: Response, address: str):
     
     select sum(case when payer = (select payer from gateway_details) then 1 else 0 end)::float / count(*) as same_maker_ratio, count(*) as n_witnessed from makers;"""
 
-    try:
-        res = etl_session.execute(sql_same_maker).one()
-        return JSONResponse({"result": {"address": address, "different_maker_ratio": round(1 - res[0], 2), "n_witnessed": int(res[1])}})
-    except sqlalchemy.exc.NoResultFound:
-        return JSONResponse({"NoResultFound": "No witness result found for this address"}, status_code=500)
+    with etl_session() as sess:
+        try:
+            res = sess.execute(sql_same_maker).one()
+            return JSONResponse({"result": {"address": address, "different_maker_ratio": round(1 - res[0], 2), "n_witnessed": int(res[1])}})
+        except sqlalchemy.exc.NoResultFound:
+            return JSONResponse({"NoResultFound": "No witness result found for this address"}, status_code=500)
 
 
 
