@@ -69,7 +69,8 @@ async def get_different_maker_ratio(session: Session, address: str) -> Tuple[dic
     stmt = f"""select sum(case when tx_payer = rx_payer then 0 else 1 end)::float / count(*) as different_maker_ratio, count(*) as n_witnessed
         from detailed_receipts where rx_address = '{address}';"""
     result = session.execute(stmt).one()
-    if result[0]:
+    print(result)
+    if result[0] is not None:
         return {"result": {"address": address, "different_maker_ratio": round(result[0], 2), "n_witnessed": int(result[1])}}, 200
     else:
         return {"NoResultFound": "No witness result found for this address"}, 500
