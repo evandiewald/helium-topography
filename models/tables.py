@@ -1,38 +1,41 @@
-from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy import Column, Text, BigInteger, Float, DateTime, ForeignKey, CheckConstraint, Enum
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
-import os
+from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, Text, BigInteger, Float, Integer, Boolean, ForeignKey, Enum
 import enum
+import os
 
 
-Base = declarative_base()
+Base = declarative_base(bind=os.getenv("POSTGRES_CONNECTION_STR"))
 
 
-class Transactions(Base):
-    __tablename__ = "transactions"
+class witness_invalid_reason_type(enum.Enum):
+    witness_rssi_too_high = 1
+    incorrect_frequency = 2
+    witness_not_same_region = 3
+    witness_too_close = 4
+    witness_on_incorrect_channel = 5
+    witness_too_far = 6
+
+
+class ChallengeReceiptsParsed(Base):
+    __tablename__ = "challenge_receipts_parsed"
 
     block = Column(BigInteger, nullable=False)
     hash = Column(Text, nullable=False, primary_key=True)
-    type = Column(Text, nullable=False)
-    fields = Column(JSONB, nullable=False)
     time = Column(BigInteger, nullable=False)
-
-
-class Blocks(Base):
-    __tablename__ = "blocks"
-
-    height = Column(BigInteger, nullable=False, primary_key=True)
-    time = Column(BigInteger, nullable=False)
-    timestamp = Column(TIMESTAMP, nullable=False)
-    prev_hash = Column(Text, nullable=True)
-    block_hash = Column(Text, nullable=False)
-    transaction_count = Column(BigInteger)
-    hbbft_round = Column(BigInteger)
-    election_epoch = Column(BigInteger)
-    epoch_start = Column(BigInteger)
-    rescue_signature = Column(Text)
-    snapshot_hash = Column(Text)
-    created_at = Column(TIMESTAMP)
+    challenger = Column(Text, nullable=False)
+    transmitter_address = Column(Text, ForeignKey("gateway_inventory.address"), nullable=False, index=True)
+    tx_power = Column(Integer)
+    origin = Column(Text)
+    witness_address = Column(Text, ForeignKey("gateway_inventory.address"), nullable=False, primary_key=True)
+    witness_is_valid = Column(Boolean, index=True)
+    witness_invalid_reason = Column(Enum(witness_invalid_reason_type))
+    witness_signal = Column(Integer)
+    witness_snr = Column(Float)
+    witness_channel = Column(Integer)
+    witness_datarate = Column(Text)
+    witness_frequency = Column(Float)
+    witness_timestamp = Column(BigInteger)
+    distance_km = Column(Float)
 
 
 class TopographyResults(Base):

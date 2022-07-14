@@ -16,7 +16,7 @@ def get_elevation_index(dataset: DatasetReader, lat: float, lon: float):
 
 def get_profile(dataset: DatasetReader, data: np.array, window: Window, lat1, lon1, distance, bearing):
     """step in increments of 30m according to resolution of topography data"""
-    d_vec = np.arange(0, distance, 0.03)
+    d_vec = np.arange(0, distance, 0.3)
     elev_vec = np.zeros_like(d_vec)
 
     for j in range(len(d_vec)):
