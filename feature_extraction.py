@@ -16,8 +16,8 @@ def get_bearing(lat1, lon1, lat2, lon2):
 
 
 def generate_profile_from_path(path: dict, dataset: DatasetReader, elevation_map: np.array, window: Window):
-    (lat1, lon1) = (path["coords_beacon"][1], path["coords_beacon"][0])
-    (lat2, lon2) = (path["coords_witness"][1], path["coords_witness"][0])
+    (lat1, lon1) = (path["coords_beacon"][0], path["coords_beacon"][1])
+    (lat2, lon2) = (path["coords_witness"][0], path["coords_witness"][1])
     bearing = get_bearing(lat1, lon1, lat2, lon2)
     d_vec, elev_vec = get_profile(dataset, elevation_map, window, lat1, lon1, path["distance_m"] / 1000, bearing)
     elev_vec[0] += path["elevation_beacon"]
@@ -48,11 +48,11 @@ def process_witness_paths(witness_paths: List[dict], dataset: DatasetReader, ele
             continue
         if path["distance_m"] > 50e3:
             continue
-        try:
-            d_vec, elev_vec = generate_profile_from_path(path, dataset, elevation_map, window)
-        except IndexError:
-            print(f"Witness path out of range: {path['_from']} to {path['_to']}, distance: {path['distance_m']}")
-            continue
+        # try:
+        d_vec, elev_vec = generate_profile_from_path(path, dataset, elevation_map, window)
+        # except IndexError:
+        #     print(f"Witness path out of range: {path['_from']} to {path['_to']}, distance: {path['distance_m']}")
+        #     continue
 
         # get topographic features
         try:

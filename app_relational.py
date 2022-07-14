@@ -56,7 +56,7 @@ load_dotenv()
 try:
     engine = create_engine(os.getenv("POSTGRES_CONNECTION_STRING"))
 except ConnectionError:
-    raise Exception('Unable to connect to the ArangoDB instance. Please check that it is running and that you have supplied the correct URL/credentials in the .env file.')
+    raise Exception('Unable to connect to the Postgres db. Please check that it is running and that you have supplied the correct URL/credentials in the .env file.')
 
 
 # EVALUATION
@@ -65,10 +65,8 @@ def generate_features(engine: Engine, hotspot_address: str, witness_direction: L
 
     if witness_direction == "inbound":
         witness_paths = get_witnesses_for_hotspot_sql(engine, hotspot_address, limit=1000)
-        print(witness_paths)
     else:
-        print("not implemented for outbound yet")
-        # witness_paths = get_witnesses_of_hotspot_sql(engine, hotspot_address, limit=1000)
+        witness_paths = get_witnesses_of_hotspot_sql(engine, hotspot_address, limit=1000)
 
     with rasterio.open(os.getenv("VRT_PATH")) as dataset:
         elevation_map, window = get_local_elevation_map(dataset, hotspot_dict["latitude"], hotspot_dict["longitude"], range_km=250)
@@ -177,9 +175,8 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
         # lat, lon, radius
         circles.append([witness_coords[idx1][0], witness_coords[idx1][1], r1*1000])
         # circles.append([witness_coords[idx2][0], witness_coords[idx2][1], r2*1000])
-
-    predicted_lat = [c[0] for c in predicted_locations]
-    predicted_lon = [c[1] for c in predicted_locations]
+    predicted_lat = [c[1] for c in predicted_locations]
+    predicted_lon = [c[0] for c in predicted_locations]
     monte_carlo_results = pd.DataFrame([predicted_lat, predicted_lon]).transpose()
     monte_carlo_results.columns = ["lat", "lon"]
 
@@ -194,6 +191,8 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
     # fig.update(layout_coloraxis_showscale=False)
     rings = pd.DataFrame(h3.k_ring(asserted_hex_res8, k))
     rings.columns = ["hex"]
+
+    print(monte_carlo_results)
 
     fig = pdk.Deck(
         map_style='mapbox://styles/mapbox/dark-v10',
@@ -345,6 +344,7 @@ if run_button:
         # try:
         hotspot_dict = get_hotspot_dict_sql(engine, hotspot_address)
         features_df, details_df, witness_coords, profiles = generate_features(engine, hotspot_address, witness_direction.lower())
+        print(features_df)
         outliers_df = find_outliers(features_df, details_df, iso_forest)
 
         if model_type == "SVM":
@@ -401,7 +401,7 @@ if run_button:
         st.metric(f"Number of Outlier Receipts / Total Witnesses", value=f"{np.sum(outliers_df['score'] < 0)} / {outliers_df.shape[0]}")
 
         posterior = bayesian_inference(gaming_dist, nominal_dist, outliers_df, prior=0.1)
-        st.metric("Gaming Probability", value=f"{np.round(posterior * 100, 1)} %")
+        # st.metric("Gaming Probability", value=f"{np.round(posterior * 100, 1)} %")
 
         st.dataframe(outliers_df)
 
