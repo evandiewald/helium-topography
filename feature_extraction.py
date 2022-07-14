@@ -51,7 +51,7 @@ def process_witness_paths(witness_paths: List[dict], dataset: DatasetReader, ele
         try:
             d_vec, elev_vec = generate_profile_from_path(path, dataset, elevation_map, window)
         except IndexError:
-            # print(f"Witness path out of range: {path['_from']} to {path['_to']}, distance: {path['distance_m']}")
+            print(f"Witness path out of range: {path['_from']} to {path['_to']}, distance: {path['distance_m']}")
             continue
 
         # get topographic features
@@ -59,6 +59,7 @@ def process_witness_paths(witness_paths: List[dict], dataset: DatasetReader, ele
             features = extract_topographic_features(d_vec, elev_vec)
         except (np.linalg.LinAlgError, SystemError):
             # hotspots are too close to create elevation profile
+            print('linalg error')
             continue
 
         # add signal-specific features

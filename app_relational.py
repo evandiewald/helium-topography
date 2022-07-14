@@ -65,6 +65,7 @@ def generate_features(engine: Engine, hotspot_address: str, witness_direction: L
 
     if witness_direction == "inbound":
         witness_paths = get_witnesses_for_hotspot_sql(engine, hotspot_address, limit=1000)
+        print(witness_paths)
     else:
         print("not implemented for outbound yet")
         # witness_paths = get_witnesses_of_hotspot_sql(engine, hotspot_address, limit=1000)
