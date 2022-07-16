@@ -10,7 +10,7 @@ import models.tables
 from models.tables import TopographyResults
 
 from typing import Tuple
-from cachetools import TTLCache
+from cachetools import TTLCache, LRUCache
 
 import os
 from sqlalchemy.engine import Engine, create_engine
@@ -75,7 +75,7 @@ async def get_different_maker_ratio(session: Session, address: str) -> Tuple[dic
         return {"NoResultFound": "No witness result found for this address"}, 500
 
 
-class WitnessCache(TTLCache):
+class WitnessCache(LRUCache):
     def __missing__(self, address) -> asyncio.Task:
         # Create a task
         with lite_session() as session:
@@ -84,7 +84,7 @@ class WitnessCache(TTLCache):
         return resource_future
 
 
-class TopographyCache(TTLCache):
+class TopographyCache(LRUCache):
     def __missing__(self, address) -> asyncio.Task:
         # Create a task
         with lite_session() as session:
@@ -93,8 +93,8 @@ class TopographyCache(TTLCache):
         return resource_future
 
 
-witness_cache = WitnessCache(maxsize=10000, ttl=86400)
-topo_cache = TopographyCache(maxsize=10000, ttl=86400)
+witness_cache = WitnessCache(maxsize=1000)
+topo_cache = TopographyCache(maxsize=1000)
 
 
 @router.get("/topography/{address}")
