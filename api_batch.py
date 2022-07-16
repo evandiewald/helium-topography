@@ -10,7 +10,7 @@ import models.tables
 from models.tables import TopographyResults
 
 from typing import Tuple
-from cachetools import TTLCache
+from cachetools import TTLCache, LRUCache
 
 import os
 from sqlalchemy.engine import Engine, create_engine
@@ -23,21 +23,18 @@ import asyncio
 load_dotenv()
 
 MAINTENANCE_MODE = False
-LITE_MODE = True
+LITE_MODE = False
+CACHE_ENABLED = False
 
 
 router = APIRouter(prefix="/api/v1")
 app = FastAPI()
 
 
-
-
-
-
-
 if not MAINTENANCE_MODE:
     lite_engine = create_engine(os.getenv("POSTGRES_CONNECTION_STRING"))
     lite_session = sessionmaker(lite_engine)
+    print("Session initialized successfully.")
 
     if not LITE_MODE:
         etl_engine = connection.connect()
@@ -46,7 +43,8 @@ else:
     print("\n\nStarting server in MAINTENANCE MODE. Requests will be processed, but results will be empty.\n\n")
 
 
-async def get_topography_results(session: Session, address: str) -> Tuple[dict, int]:
+def get_topography_results(session: Session, address: str) -> Tuple[dict, int]:
+    print("Getting topo results")
     stmt = select(TopographyResults).filter_by(address=address)
     try:
         res = session.execute(stmt).one()[0]
@@ -65,7 +63,8 @@ async def get_topography_results(session: Session, address: str) -> Tuple[dict, 
         return {"NoResultFound": "No topography result found for this address"}, 500
 
 
-async def get_different_maker_ratio(session: Session, address: str) -> Tuple[dict, int]:
+def get_different_maker_ratio(session: Session, address: str) -> Tuple[dict, int]:
+    print("getting same maker ratio")
     stmt = f"""select sum(case when tx_payer = rx_payer then 0 else 1 end)::float / count(*) as different_maker_ratio, count(*) as n_witnessed
         from detailed_receipts where rx_address = '{address}';"""
     result = session.execute(stmt).one()
@@ -75,26 +74,27 @@ async def get_different_maker_ratio(session: Session, address: str) -> Tuple[dic
         return {"NoResultFound": "No witness result found for this address"}, 500
 
 
-class WitnessCache(TTLCache):
-    def __missing__(self, address) -> asyncio.Task:
-        # Create a task
-        with lite_session() as session:
-            resource_future = asyncio.create_task(get_different_maker_ratio(session, address))
-        self[address] = resource_future
-        return resource_future
+# class WitnessCache(LRUCache):
+#     def __missing__(self, address) -> asyncio.Task:
+#         # Create a task
+#         with lite_session() as session:
+#             resource_future = asyncio.create_task(get_different_maker_ratio(session, address))
+#         self[address] = resource_future
+#         return resource_future
 
 
-class TopographyCache(TTLCache):
-    def __missing__(self, address) -> asyncio.Task:
-        # Create a task
-        with lite_session() as session:
-            resource_future = asyncio.create_task(get_topography_results(session, address))
-        self[address] = resource_future
-        return resource_future
+# class TopographyCache(LRUCache):
+#     def __missing__(self, address) -> asyncio.Task:
+#         # Create a task
+#         with lite_session() as session:
+#             resource_future = asyncio.create_task(get_topography_results(session, address))
+#         self[address] = resource_future
+#         return resource_future
 
 
-witness_cache = WitnessCache(maxsize=10000, ttl=86400)
-topo_cache = TopographyCache(maxsize=10000, ttl=86400)
+# if CACHE_ENABLED:
+#     witness_cache = WitnessCache(maxsize=1000)
+#     topo_cache = TopographyCache(maxsize=1000)
 
 
 @router.get("/topography/{address}")
@@ -102,7 +102,8 @@ async def topography(request: Request, response: Response, address: str):
     if MAINTENANCE_MODE:
         return JSONResponse({"NoResultFound": "Systems under maintenance."}, status_code=500)
     else:
-        result, status_code = await topo_cache[address]
+        with lite_session() as session:
+            result, status_code = get_topography_results(session, address)
         return JSONResponse(result, status_code=status_code)
 
 
@@ -112,7 +113,8 @@ async def witnesses(request: Request, response: Response, address: str):
         return JSONResponse({"NoResultFound": "Systems under maintenance."}, status_code=500)
     else:
         if LITE_MODE:
-            result, status_code = await witness_cache[address]
+            with lite_session() as session:
+                result, status_code = get_different_maker_ratio(session, address)
             return JSONResponse(result, status_code=status_code)
         else:
             sql_same_maker = f"""with gateway_details as (select last_block, payer from gateway_inventory where address = '{address}'),
