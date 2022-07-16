@@ -31,14 +31,10 @@ router = APIRouter(prefix="/api/v1")
 app = FastAPI()
 
 
-
-
-
-
-
 if not MAINTENANCE_MODE:
     lite_engine = create_engine(os.getenv("POSTGRES_CONNECTION_STRING"))
     lite_session = sessionmaker(lite_engine)
+    print("Session initialized successfully.")
 
     if not LITE_MODE:
         etl_engine = connection.connect()
@@ -94,8 +90,9 @@ class TopographyCache(LRUCache):
         return resource_future
 
 
-witness_cache = WitnessCache(maxsize=1000)
-topo_cache = TopographyCache(maxsize=1000)
+if CACHE_ENABLED:
+    witness_cache = WitnessCache(maxsize=1000)
+    topo_cache = TopographyCache(maxsize=1000)
 
 
 @router.get("/topography/{address}")
