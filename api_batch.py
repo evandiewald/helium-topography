@@ -23,7 +23,7 @@ import asyncio
 load_dotenv()
 
 MAINTENANCE_MODE = False
-LITE_MODE = True
+LITE_MODE = False
 CACHE_ENABLED = False
 
 
@@ -44,6 +44,7 @@ else:
 
 
 def get_topography_results(session: Session, address: str) -> Tuple[dict, int]:
+    print("Getting topo results")
     stmt = select(TopographyResults).filter_by(address=address)
     try:
         res = session.execute(stmt).one()[0]
@@ -63,6 +64,7 @@ def get_topography_results(session: Session, address: str) -> Tuple[dict, int]:
 
 
 def get_different_maker_ratio(session: Session, address: str) -> Tuple[dict, int]:
+    print("getting same maker ratio")
     stmt = f"""select sum(case when tx_payer = rx_payer then 0 else 1 end)::float / count(*) as different_maker_ratio, count(*) as n_witnessed
         from detailed_receipts where rx_address = '{address}';"""
     result = session.execute(stmt).one()
