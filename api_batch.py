@@ -24,6 +24,7 @@ load_dotenv()
 
 MAINTENANCE_MODE = False
 LITE_MODE = True
+CACHE_ENABLED = False
 
 
 router = APIRouter(prefix="/api/v1")
@@ -102,7 +103,11 @@ async def topography(request: Request, response: Response, address: str):
     if MAINTENANCE_MODE:
         return JSONResponse({"NoResultFound": "Systems under maintenance."}, status_code=500)
     else:
-        result, status_code = await topo_cache[address]
+        if CACHE_ENABLED:
+            result, status_code = await topo_cache[address]
+        else:
+            with lite_session() as session:
+                result, status_code = await get_topography_results(session, address)
         return JSONResponse(result, status_code=status_code)
 
 
@@ -112,7 +117,11 @@ async def witnesses(request: Request, response: Response, address: str):
         return JSONResponse({"NoResultFound": "Systems under maintenance."}, status_code=500)
     else:
         if LITE_MODE:
-            result, status_code = await witness_cache[address]
+            if CACHE_ENABLED:
+                result, status_code = await witness_cache[address]
+            else:
+                with lite_session() as session:
+                    result, status_code = await get_different_maker_ratio(session, address)
             return JSONResponse(result, status_code=status_code)
         else:
             sql_same_maker = f"""with gateway_details as (select last_block, payer from gateway_inventory where address = '{address}'),
