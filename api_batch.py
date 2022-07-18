@@ -23,7 +23,7 @@ import asyncio
 load_dotenv()
 
 MAINTENANCE_MODE = False
-LITE_MODE = False
+LITE_MODE = True
 CACHE_ENABLED = False
 
 
@@ -74,27 +74,27 @@ def get_different_maker_ratio(session: Session, address: str) -> Tuple[dict, int
         return {"NoResultFound": "No witness result found for this address"}, 500
 
 
-# class WitnessCache(LRUCache):
-#     def __missing__(self, address) -> asyncio.Task:
-#         # Create a task
-#         with lite_session() as session:
-#             resource_future = asyncio.create_task(get_different_maker_ratio(session, address))
-#         self[address] = resource_future
-#         return resource_future
+class WitnessCache(TTLCache):
+    def __missing__(self, address) -> asyncio.Task:
+        # Create a task
+        with lite_session() as session:
+            resource_future = asyncio.create_task(get_different_maker_ratio(session, address))
+        self[address] = resource_future
+        return resource_future
 
 
-# class TopographyCache(LRUCache):
-#     def __missing__(self, address) -> asyncio.Task:
-#         # Create a task
-#         with lite_session() as session:
-#             resource_future = asyncio.create_task(get_topography_results(session, address))
-#         self[address] = resource_future
-#         return resource_future
+class TopographyCache(TTLCache):
+    def __missing__(self, address) -> asyncio.Task:
+        # Create a task
+        with lite_session() as session:
+            resource_future = asyncio.create_task(get_topography_results(session, address))
+        self[address] = resource_future
+        return resource_future
 
 
-# if CACHE_ENABLED:
-#     witness_cache = WitnessCache(maxsize=1000)
-#     topo_cache = TopographyCache(maxsize=1000)
+if CACHE_ENABLED:
+    witness_cache = WitnessCache(maxsize=10000, ttl=86400)
+    topo_cache = TopographyCache(maxsize=10000, ttl=86400)
 
 
 @router.get("/topography/{address}")
