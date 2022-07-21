@@ -19,6 +19,8 @@ from sqlalchemy import select
 from dotenv import load_dotenv
 import asyncio
 
+from numpy import isnan
+
 
 load_dotenv()
 
@@ -53,7 +55,7 @@ def get_topography_results(session: Session, address: str) -> Tuple[dict, int]:
                 "n_outliers": res.n_outliers,
                 "block": res.block,
                 "address": res.address,
-                "prediction_error_km": res.prediction_error_km,
+                "prediction_error_km": res.prediction_error_km if not isnan(res.prediction_error_km) else -1,
                 "n_beaconers_heard": res.n_beaconers_heard
             }
         }
