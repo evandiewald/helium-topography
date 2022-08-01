@@ -46,8 +46,6 @@ iso_forest = load_model(TRAINED_ISO_PATH)
 helium_lite_engine = create_engine(os.getenv("POSTGRES_CONNECTION_STRING"))
 helium_lite_session = Session(helium_lite_engine)
 
-dataset = rasterio.open(os.getenv("VRT_PATH"))
-
 
 def get_current_height(helium_lite_session: Session) -> int:
     return helium_lite_session.query(func.max(ChallengeReceiptsParsed.block)).one()
@@ -260,6 +258,8 @@ with warnings.catch_warnings():
             if n_edges < 2:
                 continue
             path_features, path_details = [], []
+            
+            dataset = rasterio.open(os.getenv("VRT_PATH"))
 
             witness_edges = witness_edges[(witness_edges["distance_m"] > 50) & (witness_edges["distance_m"] < 50e3)]
 
@@ -290,6 +290,8 @@ with warnings.catch_warnings():
                     continue
 
 
+            dataset.close()
+            
             if len(path_details) < 1 or len(path_features) < 1:
                 # didn't find any valid edges
                 continue
