@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 import pandas as pd
 from models.tables import ChallengeReceiptsParsed, TopographyResults
 from models.transactions.poc_receipts_v2 import PocReceiptsV2
+import warnings
 
 from feature_extraction import *
 
@@ -18,6 +19,8 @@ import pickle
 import time
 from dotenv import load_dotenv
 
+
+np.seterr(invalid="ignore")
 
 load_dotenv()
 
@@ -96,6 +99,9 @@ def generate_stats(details_df, gateway_locations, eval_mean, current_height):
         for i in range(N):
             idx1, idx2, idx3 = np.random.permutation(len(witness_coords))[:3]
             u = haversine(witness_coords[idx1], witness_coords[idx2], unit=Unit.KILOMETERS)
+            if u <= 0.05:
+                # pair of witnesses is in the same hex
+                continue
 
             r1 = eval_mean[idx1]
             r2 = eval_mean[idx2]
@@ -220,85 +226,89 @@ def get_witness_edges_for_address(helium_lite_session: Session, address: str, li
         return None
 
 
-while True:
-    current_height = get_current_height(helium_lite_session)
+with warnings.catch_warnings():
+    # RuntimeWarning for calculating mean of empty slice. safe to ignore as it's handled elsewhere
+    warnings.simplefilter("ignore", category=RuntimeWarning)
+    while True:
+        current_height = get_current_height(helium_lite_session)
 
-    print("Getting gateway inventory")
-    t = time.time()
-    gateway_locations = pd.read_sql("select address, location, gain, elevation from gateway_inventory;", con=helium_lite_session.bind)
-    print(f"Done, {time.time() - t} s")
-
-    gateway_locations = gateway_locations.set_index("address").dropna()
-    gateway_locations["asserted_location"] = gateway_locations["location"].map(h3.h3_to_geo)
-    gateway_locations["asserted_hex_res8"] = gateway_locations.apply(lambda x: h3.h3_to_parent(x["location"], 8), axis=1)
-
-    n_gateways = len(gateway_locations)
-    for i, address in enumerate(gateway_locations.index):
-        if i % 1000 == 0:
-            print(f"{i} / {n_gateways} gateways, dt: {time.time() - t} s")
-
+        print("Getting gateway inventory")
         t = time.time()
+        gateway_locations = pd.read_sql("select address, location, gain, elevation from gateway_inventory order by last_block desc;",
+                                        con=helium_lite_session.bind)
+        print(f"Done, {time.time() - t} s")
 
-        try:
-            witness_edges = get_witness_edges_for_address(helium_lite_session, address)
-        except (sqlalchemy.exc.NoResultFound, KeyError, ValueError):
-            continue
-        if witness_edges is None:
-            continue
+        gateway_locations = gateway_locations.set_index("address").dropna()
+        gateway_locations["asserted_location"] = gateway_locations["location"].map(h3.h3_to_geo)
+        gateway_locations["asserted_hex_res8"] = gateway_locations.apply(lambda x: h3.h3_to_parent(x["location"], 8), axis=1)
 
-        n_edges = len(witness_edges)
-        if n_edges < 2:
-            continue
-        path_features, path_details = [], []
-
-        witness_edges = witness_edges[(witness_edges["distance_m"] > 50) & (witness_edges["distance_m"] < 50e3)]
-
-        # # tried .apply, iterrows(), to_dict -> iterate. this is fastest by a slight margin (~50s / 1000 rows)
-        for i, x in witness_edges.iterrows():
-            if x["distance_m"] > 50e3 or x["distance_m"] < 50:
-                continue
-
-            features = map_topo_features(x, dataset)
-            if np.isnan(features["ra"]):
-                continue
+        n_gateways = len(gateway_locations)
+        t = time.time()
+        for i, address in enumerate(gateway_locations.index):
+            if i % 1000 == 0:
+                print(f"{i} / {n_gateways} gateways, dt: {time.time() - t} s")
+                t = time.time()
 
             try:
-                features["tx_power"] = x["tx_power"]
-                features["gain_beacon"] = x["gain_x"]
-                features["gain_witness"] = x["gain_y"]
-                features["rssi"] = x["rssi"]
-                features["snr"] = x["snr"]
-                features["distance_m"] = x["distance_m"]
-
-                details = {"transmitter_address": x["transmitter_address"],
-                           "witness_address": x["witness_address"],
-                           "transmitter_coords": x["transmitter_coords"]}
-
-                path_features.append(features)
-                path_details.append(details)
-            except KeyError:
+                witness_edges = get_witness_edges_for_address(helium_lite_session, address)
+            except (sqlalchemy.exc.NoResultFound, KeyError, ValueError):
+                continue
+            if witness_edges is None:
                 continue
 
+            n_edges = len(witness_edges)
+            if n_edges < 2:
+                continue
+            path_features, path_details = [], []
 
-        if len(path_details) < 1 or len(path_features) < 1:
-            # didn't find any valid edges
-            continue
+            witness_edges = witness_edges[(witness_edges["distance_m"] > 50) & (witness_edges["distance_m"] < 50e3)]
 
-        features_df = pd.DataFrame(path_features)
-        details_df = pd.DataFrame(path_details)
+            # # tried .apply, iterrows(), to_dict -> iterate. this is fastest by a slight margin (~50s / 1000 rows)
+            for i, x in witness_edges.iterrows():
+                if x["distance_m"] > 50e3 or x["distance_m"] < 50:
+                    continue
 
-        X_eval = np.array(features_df.drop(["distance_m"], axis=1))
+                features = map_topo_features(x, dataset)
+                if np.isnan(features["ra"]):
+                    continue
 
-        eval_mean = svm.predict(X_eval)
+                try:
+                    features["tx_power"] = x["tx_power"]
+                    features["gain_beacon"] = x["gain_x"]
+                    features["gain_witness"] = x["gain_y"]
+                    features["rssi"] = x["rssi"]
+                    features["snr"] = x["snr"]
+                    features["distance_m"] = x["distance_m"]
 
-        outliers = iso_forest.predict(features_df)
-        details_df["outliers"] = outliers
+                    details = {"transmitter_address": x["transmitter_address"],
+                               "witness_address": x["witness_address"],
+                               "transmitter_coords": x["transmitter_coords"]}
 
-        try:
-            result_rows = generate_stats(details_df, gateway_locations, eval_mean, current_height)
-        except (KeyError, AttributeError):
-            continue
-        upsert_predictions(result_rows, helium_lite_session)
+                    path_features.append(features)
+                    path_details.append(details)
+                except KeyError:
+                    continue
 
-        path_features, path_details = [], []
+
+            if len(path_details) < 1 or len(path_features) < 1:
+                # didn't find any valid edges
+                continue
+
+            features_df = pd.DataFrame(path_features)
+            details_df = pd.DataFrame(path_details)
+
+            X_eval = np.array(features_df.drop(["distance_m"], axis=1))
+
+            eval_mean = svm.predict(X_eval)
+
+            outliers = iso_forest.predict(features_df)
+            details_df["outliers"] = outliers
+
+            try:
+                result_rows = generate_stats(details_df, gateway_locations, eval_mean, current_height)
+            except (KeyError, AttributeError):
+                continue
+            upsert_predictions(result_rows, helium_lite_session)
+
+            path_features, path_details = [], []
 
