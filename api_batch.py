@@ -61,7 +61,7 @@ def get_topography_results(session: Session, address: str) -> Tuple[dict, int]:
         }
         return result_dict, 200
     except sqlalchemy.exc.NoResultFound:
-        return {"NoResultFound": "No topography result found for this address"}, 500
+        return {"NoResultFound": "No topography result found for this address"}, 404
 
 
 def get_different_maker_ratio(session: Session, address: str) -> Tuple[dict, int]:
@@ -71,7 +71,7 @@ def get_different_maker_ratio(session: Session, address: str) -> Tuple[dict, int
     if result[0] is not None:
         return {"result": {"address": address, "different_maker_ratio": round(result[0], 2), "n_witnessed": int(result[1])}}, 200
     else:
-        return {"NoResultFound": "No witness result found for this address"}, 500
+        return {"NoResultFound": "No witness result found for this address"}, 404
 
 
 class WitnessCache(TTLCache):
@@ -100,7 +100,7 @@ if CACHE_ENABLED:
 @router.get("/topography/{address}")
 async def topography(request: Request, response: Response, address: str):
     if MAINTENANCE_MODE:
-        return JSONResponse({"NoResultFound": "Systems under maintenance."}, status_code=500)
+        return JSONResponse({"NoResultFound": "Systems under maintenance."}, status_code=503)
     else:
         with lite_session() as session:
             result, status_code = get_topography_results(session, address)
@@ -110,7 +110,7 @@ async def topography(request: Request, response: Response, address: str):
 @router.get("/witnesses/{address}")
 async def witnesses(request: Request, response: Response, address: str):
     if MAINTENANCE_MODE:
-        return JSONResponse({"NoResultFound": "Systems under maintenance."}, status_code=500)
+        return JSONResponse({"NoResultFound": "Systems under maintenance."}, status_code=503)
     else:
         if LITE_MODE:
             with lite_session() as session:
@@ -146,7 +146,7 @@ async def witnesses(request: Request, response: Response, address: str):
                     res = sess.execute(sql_same_maker).one()
                     return JSONResponse({"result": {"address": address, "different_maker_ratio": round(1 - res[0], 2), "n_witnessed": int(res[1])}})
                 except sqlalchemy.exc.NoResultFound:
-                    return JSONResponse({"NoResultFound": "No witness result found for this address"}, status_code=500)
+                    return JSONResponse({"NoResultFound": "No witness result found for this address"}, status_code=404)
 
 
 
