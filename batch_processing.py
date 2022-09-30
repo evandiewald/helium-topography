@@ -263,31 +263,32 @@ with warnings.catch_warnings():
 
             witness_edges = witness_edges[(witness_edges["distance_m"] > 50) & (witness_edges["distance_m"] < 50e3)]
 
-            # # tried .apply, iterrows(), to_dict -> iterate. this is fastest by a slight margin (~50s / 1000 rows)
-            for i, x in witness_edges.iterrows():
-                if x["distance_m"] > 50e3 or x["distance_m"] < 50:
-                    continue
+            with rasterio.open(os.getenv("VRT_PATH")) as dataset:
+                # tried .apply, iterrows(), to_dict -> iterate. this is fastest by a slight margin (~50s / 1000 rows)
+                for i, x in witness_edges.iterrows():
+                    if x["distance_m"] > 50e3 or x["distance_m"] < 50:
+                        continue
 
-                features = map_topo_features(x, dataset)
-                if np.isnan(features["ra"]):
-                    continue
+                    features = map_topo_features(x, dataset)
+                    if np.isnan(features["ra"]):
+                        continue
 
-                try:
-                    features["tx_power"] = x["tx_power"]
-                    features["gain_beacon"] = x["gain_x"]
-                    features["gain_witness"] = x["gain_y"]
-                    features["rssi"] = x["rssi"]
-                    features["snr"] = x["snr"]
-                    features["distance_m"] = x["distance_m"]
+                    try:
+                        features["tx_power"] = x["tx_power"]
+                        features["gain_beacon"] = x["gain_x"]
+                        features["gain_witness"] = x["gain_y"]
+                        features["rssi"] = x["rssi"]
+                        features["snr"] = x["snr"]
+                        features["distance_m"] = x["distance_m"]
 
-                    details = {"transmitter_address": x["transmitter_address"],
-                               "witness_address": x["witness_address"],
-                               "transmitter_coords": x["transmitter_coords"]}
+                        details = {"transmitter_address": x["transmitter_address"],
+                                   "witness_address": x["witness_address"],
+                                   "transmitter_coords": x["transmitter_coords"]}
 
-                    path_features.append(features)
-                    path_details.append(details)
-                except KeyError:
-                    continue
+                        path_features.append(features)
+                        path_details.append(details)
+                    except KeyError:
+                        continue
 
 
             if len(path_details) < 1 or len(path_features) < 1:

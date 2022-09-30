@@ -131,7 +131,6 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
     asserted_hex_res8 = h3.geo_to_h3(asserted_location[0], asserted_location[1], 8)
     predicted_locations = []
 
-    # ADDED FOR TEMPORARY VISUALIZATION
     circles = []
     for i in range(N):
         idx1, idx2, idx3 = np.random.permutation(X_eval.shape[0])[:3]
@@ -151,17 +150,17 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
             continue
 
         x_prime = (r1**2 - r2**2 + u**2) / (2*u)
+
         if (r1**2 - x_prime**2) < 0:
             # chance that sampled radii are negative, especially when extrapolating gaussian process model
             continue
         y_prime_1 = np.sqrt(r1**2 - x_prime**2)
         y_prime_2 = -y_prime_1
 
-        phi_1 = get_bearing(witness_coords[idx1][0], witness_coords[idx1][1], y_prime_1 + witness_coords[idx1][0], x_prime + witness_coords[idx1][1])
-        phi_2 = get_bearing(witness_coords[idx1][0], witness_coords[idx1][1], y_prime_2 + witness_coords[idx1][0], x_prime + witness_coords[idx1][1])
+        # 111 km per degree
+        pt_1 = (witness_coords[idx1][0] + y_prime_1/111, witness_coords[idx1][1] + x_prime/111)
+        pt_2 = (witness_coords[idx1][0] + y_prime_2/111, witness_coords[idx1][1] + x_prime/111)
 
-        pt_1 = inverse_haversine(witness_coords[idx1], r1, phi_1)
-        pt_2 = inverse_haversine(witness_coords[idx1], r1, phi_2)
 
         # if haversine(witness_coords[idx3], pt_1) < haversine(witness_coords[idx3], pt_2):
         if haversine(asserted_location, pt_1) < haversine(asserted_location, pt_2):
@@ -182,6 +181,7 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
 
     circles_df = pd.DataFrame(circles)
     circles_df.columns = ["lat", "lon", "radius"]
+    circles_df["coordinates"] = circles_df.apply(lambda x: (x["lat"], x["lon"]), axis=1)
     # fig = px.density_mapbox(monte_carlo_results, lat="lat", lon="lon", zoom=8, radius=10)
     # # fig = px.scatter_mapbox(monte_carlo_results, lat="lat", lon="lon", zoom=9)
     # fig.update_layout(mapbox_style="dark",
@@ -191,8 +191,6 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
     # fig.update(layout_coloraxis_showscale=False)
     rings = pd.DataFrame(h3.k_ring(asserted_hex_res8, k))
     rings.columns = ["hex"]
-
-    print(monte_carlo_results)
 
     fig = pdk.Deck(
         map_style='mapbox://styles/mapbox/dark-v10',
@@ -210,13 +208,13 @@ def monte_carlo_trilateration(X: pd.DataFrame, witness_coords: list, model, hots
             pdk.Layer(
                 'ScatterplotLayer',
                 data=circles_df,
-                get_position='[lon, lat]',
+                get_position='coordinates',
                 get_radius="radius",
                 filled=False,
                 stroked=True,
-                get_line_color=[0, 255, 0, 10],
+                get_line_color=[0, 255, 0],
                 get_line_width=100,
-                get_fill_color=[0, 0, 0, 10]
+                get_fill_color=[0, 255, 0]
             )
         )
 
@@ -344,7 +342,6 @@ if run_button:
         # try:
         hotspot_dict = get_hotspot_dict_sql(engine, hotspot_address)
         features_df, details_df, witness_coords, profiles = generate_features(engine, hotspot_address, witness_direction.lower())
-        print(features_df)
         outliers_df = find_outliers(features_df, details_df, iso_forest)
 
         if model_type == "SVM":
