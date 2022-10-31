@@ -1,0 +1,16 @@
+FROM python:3.8-slim-buster
+
+WORKDIR /usr/src/app
+
+COPY . .
+
+RUN apt-get upgrade
+RUN apt-get -y update
+
+# libpq-dev is needed by pyscopg2, which is needed by sqlalchemy
+RUN apt-get -y install gcc libpq-dev
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+
+CMD ["uvicorn", "api_batch:app", "--host", "0.0.0.0", "--port", "8080"]
