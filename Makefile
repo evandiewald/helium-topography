@@ -9,11 +9,11 @@ docker-clean-processing: docker-stop-processing
 docker-start-processing:
         docker run -d --init \
                 --name batch-processing \
-								--restart unless-stopped \
-								--cpus 2 \
-								--memory 3g \
-								--memory-reservation 2g \
-								--memory-swap 3g \
+                --restart unless-stopped \
+                --cpus 2 \
+                --memory 3g \
+                --memory-reservation 2g \
+                --memory-swap 3g \
                 helium-topography-batch-processing
 
 docker-stop-processing:
@@ -28,11 +28,11 @@ docker-start-api:
         docker run -d --init \
                 --name api \
                 --publish 8080:8080 \
-								--restart unless-stopped \
-								--cpus 1 \
-								--memory 3g \
-								--memory-reservation 2g \
-								--memory-swap 3g \
+                --restart unless-stopped \
+                --cpus 1 \
+                --memory 3g \
+                --memory-reservation 2g \
+                --memory-swap 3g \
                 helium-topography-api
 
 docker-stop-api:
